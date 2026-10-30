@@ -27,6 +27,7 @@ export interface Player {
   quests?: Quest[];
   completedQuestIds?: string[];
   exploredBiomes?: BiomeType[];
+  exploredTiles?: string[];
 }
 
 export interface HeroVisualArchetype {

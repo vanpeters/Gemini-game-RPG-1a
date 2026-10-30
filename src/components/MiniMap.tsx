@@ -1,10 +1,28 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Player, WorldMonster, WorldObject, NetworkPeer, BiomeType } from '../types/rpg';
-import { WORLD_WIDTH, WORLD_HEIGHT, getBiomeAt } from '../utils/worldGenerator';
-import { Compass, Maximize2, Minimize2, Radio, Crosshair, Users, ChevronUp, ChevronDown } from 'lucide-react';
+import { WORLD_WIDTH, WORLD_HEIGHT, getBiomeAt, TileType } from '../utils/worldGenerator';
+import {
+  FOG_VISION_RADIUS,
+  RADAR_DETECTION_RADIUS,
+  getExplorationStats,
+  parseTileKey,
+  tileKey,
+} from '../utils/fogOfWar';
+import {
+  Globe,
+  Maximize2,
+  Minimize2,
+  Radio,
+  Crosshair,
+  Users,
+  ChevronUp,
+  Map as MapIcon,
+  Eye,
+} from 'lucide-react';
 
 interface MiniMapProps {
   player: Player;
+  worldTiles?: TileType[][];
   mobs: WorldMonster[];
   objects: WorldObject[];
   peers: NetworkPeer[];
@@ -13,15 +31,31 @@ interface MiniMapProps {
 }
 
 const BIOME_CANVAS_COLORS: Record<BiomeType, string> = {
-  oakhaven: '#142918',
-  wildwood: '#0d2413',
-  ruins: '#171a2b',
-  mire: '#12231c',
-  caldera: '#2b1210',
+  oakhaven: '#142f1b',
+  wildwood: '#0d2816',
+  ruins: '#1a1d33',
+  mire: '#17221d',
+  caldera: '#381412',
+};
+
+const TILE_CANVAS_COLORS: Record<string, string> = {
+  grass: '#1b3b22',
+  dirt: '#443221',
+  cobblestone: '#64748b',
+  stone_slab: '#475569',
+  wood_plank: '#713f12',
+  water: '#1e3a8a',
+  deep_water: '#172554',
+  lava: '#b91c1c',
+  wall: '#334155',
+  tree: '#14532d',
+  ruin_pillar: '#64748b',
+  swamp_mud: '#292524',
 };
 
 export const MiniMap: React.FC<MiniMapProps> = ({
   player,
+  worldTiles,
   mobs,
   objects,
   peers,
@@ -38,6 +72,27 @@ export const MiniMap: React.FC<MiniMapProps> = ({
   const playerY = player.y ?? 19;
   const currentBiome = getBiomeAt(playerX, playerY);
 
+  // Fast set lookup for explored tiles
+  const exploredSet = useMemo(() => {
+    return new Set<string>(player.exploredTiles || []);
+  }, [player.exploredTiles]);
+
+  // Exploration percentage stats
+  const stats = useMemo(() => {
+    return getExplorationStats(exploredSet.size);
+  }, [exploredSet.size]);
+
+  // Support hotkey 'M' toggle via custom event
+  useEffect(() => {
+    const handleToggleEvent = () => {
+      setIsCollapsed((prev) => !prev);
+    };
+    window.addEventListener('valdor:toggle-minimap', handleToggleEvent);
+    return () => {
+      window.removeEventListener('valdor:toggle-minimap', handleToggleEvent);
+    };
+  }, []);
+
   // Animate radar sweep line
   useEffect(() => {
     let animId: number;
@@ -50,8 +105,6 @@ export const MiniMap: React.FC<MiniMapProps> = ({
   }, []);
 
   // Filter nearby entities for radar mode (radius 22 tiles)
-  const RADAR_RADIUS = 22;
-
   const nearbyMobs = useMemo(() => {
     return mobs
       .filter((m) => m.hp > 0)
@@ -64,7 +117,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({
 
   const nearestMob = nearbyMobs[0] || null;
 
-  // Render on Canvas
+  // Render on Canvas with Fog of War
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -76,10 +129,12 @@ export const MiniMap: React.FC<MiniMapProps> = ({
     ctx.clearRect(0, 0, width, height);
 
     if (mapMode === 'radar') {
+      // ==========================================
       // --- RADAR MODE (Player Centered) ---
+      // ==========================================
       const centerX = width / 2;
       const centerY = height / 2;
-      const scale = width / (RADAR_RADIUS * 2);
+      const scale = width / (RADAR_DETECTION_RADIUS * 2);
 
       // Radar circular clip
       ctx.save();
@@ -87,12 +142,55 @@ export const MiniMap: React.FC<MiniMapProps> = ({
       ctx.arc(centerX, centerY, width / 2 - 2, 0, Math.PI * 2);
       ctx.clip();
 
-      // Background fill based on current biome
-      ctx.fillStyle = BIOME_CANVAS_COLORS[currentBiome] || '#0f172a';
+      // Deep dark void for uncharted territory
+      ctx.fillStyle = '#060913';
       ctx.fillRect(0, 0, width, height);
 
+      // Draw terrain tiles within radar range
+      const minTileX = Math.max(0, Math.floor(playerX - RADAR_DETECTION_RADIUS));
+      const maxTileX = Math.min(WORLD_WIDTH - 1, Math.ceil(playerX + RADAR_DETECTION_RADIUS));
+      const minTileY = Math.max(0, Math.floor(playerY - RADAR_DETECTION_RADIUS));
+      const maxTileY = Math.min(WORLD_HEIGHT - 1, Math.ceil(playerY + RADAR_DETECTION_RADIUS));
+
+      for (let ty = minTileY; ty <= maxTileY; ty++) {
+        for (let tx = minTileX; tx <= maxTileX; tx++) {
+          const dx = tx - playerX;
+          const dy = ty - playerY;
+          const dist = Math.hypot(dx, dy);
+          if (dist > RADAR_DETECTION_RADIUS) continue;
+
+          const screenX = centerX + (dx - 0.5) * scale;
+          const screenY = centerY + (dy - 0.5) * scale;
+          const tileSize = scale + 0.6; // slight overlap to prevent seams
+
+          const isTileExplored = exploredSet.has(tileKey(tx, ty));
+
+          if (isTileExplored) {
+            const tileType = worldTiles?.[ty]?.[tx];
+            const tileBiome = getBiomeAt(tx, ty);
+            const baseColor =
+              (tileType && TILE_CANVAS_COLORS[tileType]) ||
+              BIOME_CANVAS_COLORS[tileBiome] ||
+              '#142f1b';
+
+            ctx.fillStyle = baseColor;
+            ctx.fillRect(screenX, screenY, tileSize, tileSize);
+
+            // If tile is outside active sight radius (memory fog)
+            if (dist > FOG_VISION_RADIUS) {
+              ctx.fillStyle = 'rgba(6, 9, 19, 0.58)';
+              ctx.fillRect(screenX, screenY, tileSize, tileSize);
+            }
+          } else {
+            // Unexplored tile: subtle grid shrouded in darkness
+            ctx.fillStyle = '#070a14';
+            ctx.fillRect(screenX, screenY, tileSize, tileSize);
+          }
+        }
+      }
+
       // Range grid rings
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
       ctx.lineWidth = 1;
       [0.33, 0.66, 1.0].forEach((ratio) => {
         ctx.beginPath();
@@ -100,7 +198,17 @@ export const MiniMap: React.FC<MiniMapProps> = ({
         ctx.stroke();
       });
 
+      // Active Vision Radius Ring
+      const visionPx = FOG_VISION_RADIUS * scale;
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.25)';
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, visionPx, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
       // Crosshairs
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
       ctx.beginPath();
       ctx.moveTo(centerX, 0);
       ctx.lineTo(centerX, height);
@@ -108,32 +216,37 @@ export const MiniMap: React.FC<MiniMapProps> = ({
       ctx.lineTo(width, centerY);
       ctx.stroke();
 
-      // Radar Sweep Line & Fade
+      // Radar Sweep Line & Cone
       const sweepX = centerX + Math.cos(sweepAngle) * (width / 2);
       const sweepY = centerY + Math.sin(sweepAngle) * (height / 2);
-      const sweepGrad = ctx.createRadialGradient(centerX, centerY, 5, centerX, centerY, width / 2);
-      sweepGrad.addColorStop(0, 'rgba(34, 197, 94, 0.3)');
-      sweepGrad.addColorStop(1, 'rgba(34, 197, 94, 0.02)');
+      const sweepGrad = ctx.createRadialGradient(centerX, centerY, 4, centerX, centerY, width / 2);
+      sweepGrad.addColorStop(0, 'rgba(34, 197, 94, 0.35)');
+      sweepGrad.addColorStop(1, 'rgba(34, 197, 94, 0.01)');
       ctx.fillStyle = sweepGrad;
       ctx.beginPath();
       ctx.moveTo(centerX, centerY);
-      ctx.arc(centerX, centerY, width / 2, sweepAngle - 0.3, sweepAngle);
+      ctx.arc(centerX, centerY, width / 2, sweepAngle - 0.32, sweepAngle);
       ctx.closePath();
       ctx.fill();
 
-      ctx.strokeStyle = 'rgba(74, 222, 128, 0.7)';
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.75)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(centerX, centerY);
       ctx.lineTo(sweepX, sweepY);
       ctx.stroke();
 
-      // Render World Objects (Chests, Campfires, Fountains)
+      // Render World Objects (Only if explored or in vision)
       objects.forEach((obj) => {
         const dx = obj.x - playerX;
         const dy = obj.y - playerY;
         const dist = Math.hypot(dx, dy);
-        if (dist > RADAR_RADIUS) return;
+        if (dist > RADAR_DETECTION_RADIUS) return;
+
+        // Must be in explored tile or within active vision
+        const objKey = tileKey(Math.round(obj.x), Math.round(obj.y));
+        const isExplored = exploredSet.has(objKey) || dist <= FOG_VISION_RADIUS;
+        if (!isExplored) return;
 
         const screenX = centerX + dx * scale;
         const screenY = centerY + dy * scale;
@@ -142,33 +255,33 @@ export const MiniMap: React.FC<MiniMapProps> = ({
         if (obj.type === 'chest') {
           ctx.fillStyle = obj.opened ? '#94a3b8' : '#eab308';
           ctx.beginPath();
-          ctx.arc(screenX, screenY, 3, 0, Math.PI * 2);
+          ctx.arc(screenX, screenY, 3.2, 0, Math.PI * 2);
           ctx.fill();
         } else if (obj.type === 'campfire') {
           ctx.fillStyle = '#f97316';
           ctx.beginPath();
-          ctx.arc(screenX, screenY, 3.5, 0, Math.PI * 2);
+          ctx.arc(screenX, screenY, 3.8, 0, Math.PI * 2);
           ctx.fill();
         } else if (obj.type === 'fountain') {
           ctx.fillStyle = '#38bdf8';
           ctx.beginPath();
-          ctx.arc(screenX, screenY, 3.5, 0, Math.PI * 2);
+          ctx.arc(screenX, screenY, 3.8, 0, Math.PI * 2);
           ctx.fill();
         } else {
           ctx.fillStyle = '#a855f7';
           ctx.beginPath();
-          ctx.arc(screenX, screenY, 3, 0, Math.PI * 2);
+          ctx.arc(screenX, screenY, 3.2, 0, Math.PI * 2);
           ctx.fill();
         }
         ctx.restore();
       });
 
-      // Render LAN Peers
+      // Render LAN Peers (Allies with radio beacons emit signal)
       peers.forEach((peer) => {
         const dx = peer.x - playerX;
         const dy = peer.y - playerY;
         const dist = Math.hypot(dx, dy);
-        if (dist > RADAR_RADIUS) return;
+        if (dist > RADAR_DETECTION_RADIUS) return;
 
         const screenX = centerX + dx * scale;
         const screenY = centerY + dy * scale;
@@ -186,9 +299,16 @@ export const MiniMap: React.FC<MiniMapProps> = ({
         ctx.fill();
       });
 
-      // Render Detected Mobs
+      // Render Detected Mobs (Only if inside active vision OR inside explored radar territory)
       nearbyMobs.forEach((mob) => {
-        if (mob.dist > RADAR_RADIUS) return;
+        if (mob.dist > RADAR_DETECTION_RADIUS) return;
+
+        const mobKey = tileKey(Math.round(mob.x), Math.round(mob.y));
+        const inActiveVision = mob.dist <= FOG_VISION_RADIUS;
+        const inExploredTerritory = exploredSet.has(mobKey);
+
+        // Hostiles in unexplored shroud outside direct vision are hidden!
+        if (!inActiveVision && !inExploredTerritory) return;
 
         const dx = mob.x - playerX;
         const dy = mob.y - playerY;
@@ -201,7 +321,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({
 
         ctx.save();
         if (isDragon) {
-          // Boss Dragon: Pulsing purple/crimson diamond
+          // Boss Dragon: Pulsing crimson diamond
           ctx.fillStyle = '#ef4444';
           ctx.strokeStyle = '#a855f7';
           ctx.lineWidth = 2;
@@ -240,7 +360,6 @@ export const MiniMap: React.FC<MiniMapProps> = ({
 
       // Render Player Marker at Center
       ctx.save();
-      // Direction pointer
       ctx.translate(centerX, centerY);
       let angle = 0;
       if (player.direction === 'up') angle = -Math.PI / 2;
@@ -250,7 +369,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({
 
       ctx.rotate(angle);
 
-      // Player Arrow
+      // Player Directional Arrow
       ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = '#f59e0b';
       ctx.lineWidth = 1.5;
@@ -273,43 +392,50 @@ export const MiniMap: React.FC<MiniMapProps> = ({
       ctx.arc(centerX, centerY, width / 2 - 2, 0, Math.PI * 2);
       ctx.stroke();
     } else {
+      // ==========================================
       // --- FULL WORLD OVERVIEW MODE (80x80 Grid) ---
+      // ==========================================
       const scaleX = width / WORLD_WIDTH;
       const scaleY = height / WORLD_HEIGHT;
 
-      // Draw biome gradient zones
-      ctx.fillStyle = '#0b1329';
+      // Uncharted darkness for entire world
+      ctx.fillStyle = '#050811';
       ctx.fillRect(0, 0, width, height);
 
-      // Draw subtle biome regions
-      ctx.fillStyle = 'rgba(34, 197, 94, 0.2)'; // Oakhaven
-      ctx.fillRect(0, 0, width * 0.45, height * 0.45);
+      // Render only explored tiles from the persistent exploration set
+      exploredSet.forEach((key) => {
+        const [tx, ty] = parseTileKey(key);
+        if (tx < 0 || tx >= WORLD_WIDTH || ty < 0 || ty >= WORLD_HEIGHT) return;
 
-      ctx.fillStyle = 'rgba(21, 128, 61, 0.25)'; // Wildwood
-      ctx.fillRect(width * 0.45, 0, width * 0.55, height * 0.5);
+        const tileType = worldTiles?.[ty]?.[tx];
+        const tileBiome = getBiomeAt(tx, ty);
+        const color =
+          (tileType && TILE_CANVAS_COLORS[tileType]) ||
+          BIOME_CANVAS_COLORS[tileBiome] ||
+          '#142f1b';
 
-      ctx.fillStyle = 'rgba(99, 102, 241, 0.25)'; // Ruins
-      ctx.fillRect(0, height * 0.45, width * 0.5, height * 0.55);
+        ctx.fillStyle = color;
+        ctx.fillRect(tx * scaleX, ty * scaleY, scaleX + 0.5, scaleY + 0.5);
+      });
 
-      ctx.fillStyle = 'rgba(132, 204, 22, 0.2)'; // Mire
-      ctx.fillRect(width * 0.5, height * 0.5, width * 0.5, height * 0.5);
-
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.35)'; // Caldera (Center East)
-      ctx.beginPath();
-      ctx.arc(width * 0.72, height * 0.65, width * 0.2, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw Objects
+      // Draw Objects (Only if explored)
       objects.forEach((obj) => {
+        const key = tileKey(Math.round(obj.x), Math.round(obj.y));
+        if (!exploredSet.has(key)) return;
+
         const sx = obj.x * scaleX;
         const sy = obj.y * scaleY;
-        ctx.fillStyle = obj.type === 'chest' ? '#eab308' : obj.type === 'campfire' ? '#f97316' : '#38bdf8';
+        ctx.fillStyle =
+          obj.type === 'chest' ? '#eab308' : obj.type === 'campfire' ? '#f97316' : '#38bdf8';
         ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
       });
 
-      // Draw Mobs
+      // Draw Mobs (Only if in explored region)
       mobs.forEach((mob) => {
         if (mob.hp <= 0) return;
+        const key = tileKey(Math.round(mob.x), Math.round(mob.y));
+        if (!exploredSet.has(key)) return;
+
         const sx = mob.x * scaleX;
         const sy = mob.y * scaleY;
         ctx.fillStyle = mob.id === 'dragon' ? '#ef4444' : '#f59e0b';
@@ -326,15 +452,15 @@ export const MiniMap: React.FC<MiniMapProps> = ({
         ctx.fill();
       });
 
-      // Draw Player Position
+      // Draw Player Position & Active Vision Halo
       const px = playerX * scaleX;
       const py = playerY * scaleY;
 
-      // Radar visibility circle on world map
-      ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
+      // Active Vision Aura
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(px, py, RADAR_RADIUS * scaleX, 0, Math.PI * 2);
+      ctx.arc(px, py, FOG_VISION_RADIUS * scaleX, 0, Math.PI * 2);
       ctx.stroke();
 
       ctx.fillStyle = '#ffffff';
@@ -362,37 +488,67 @@ export const MiniMap: React.FC<MiniMapProps> = ({
     objects,
     peers,
     targetEnemy,
+    exploredSet,
+    worldTiles,
   ]);
 
   const mapSize = isExpanded ? 210 : 140;
 
+  // ==========================================
+  // --- REDUCED SMALL WORLD ICON BUTTON ---
+  // ==========================================
   if (isCollapsed) {
     return (
       <div className="pointer-events-auto flex flex-col items-end">
         <button
           onClick={() => setIsCollapsed(false)}
-          className="px-2.5 py-1 bg-slate-950/70 hover:bg-slate-900/90 backdrop-blur-md border border-slate-700/80 hover:border-amber-500/60 text-slate-300 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 shadow-lg transition active:scale-95 group"
-          title="Expand Mini-Map"
+          className="relative group p-2.5 bg-slate-950/80 hover:bg-slate-900/95 backdrop-blur-md border border-amber-500/60 hover:border-amber-400 rounded-full shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none"
+          title={`Expand World Map & Radar (M) • ${stats.percent}% Explored`}
+          aria-label="Expand Mini-Map"
         >
-          <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-          <span>RADAR ({Math.round(playerX)}, {Math.round(playerY)})</span>
-          <span className="text-[10px] text-amber-400 group-hover:translate-y-0.5 transition">▼</span>
+          {/* Subtle spinning glow aura */}
+          <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-amber-500/20 via-cyan-500/20 to-emerald-500/20 animate-spin-slow opacity-60 group-hover:opacity-100 transition-opacity" />
+
+          {/* World Icon */}
+          <Globe className="w-5 h-5 text-amber-300 group-hover:text-amber-200 relative z-10 transition-transform group-hover:rotate-12" />
+
+          {/* Active Radar Ping Dot */}
+          <span className="absolute top-0 right-0 flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-slate-950" />
+          </span>
+
+          {/* Hover Tooltip / Quick Stats */}
+          <span className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1.5 px-2.5 py-1 bg-slate-950/95 border border-slate-700/80 rounded-lg text-[10px] font-mono text-slate-200 whitespace-nowrap shadow-xl pointer-events-none z-20">
+            <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+            <span>Map [M]</span>
+            <span className="text-amber-400 font-bold">{stats.percent}% Mapped</span>
+          </span>
         </button>
       </div>
     );
   }
 
+  // ==========================================
+  // --- FULL EXPANDED MINIMAP HUD ---
+  // ==========================================
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-1.5 animate-fade-in">
-      {/* Minimap Frame Box */}
-      <div className="relative bg-slate-950/70 backdrop-blur-md border border-slate-700/80 hover:border-slate-600 rounded-xl p-2 shadow-2xl overflow-hidden transition-all duration-300">
+      <div className="relative bg-slate-950/75 backdrop-blur-md border border-slate-700/80 hover:border-slate-600 rounded-xl p-2 shadow-2xl overflow-hidden transition-all duration-300">
         {/* Header toolbar */}
         <div className="flex items-center justify-between pb-1 mb-1 border-b border-slate-800/80 text-[11px] font-mono">
           <div className="flex items-center gap-1 text-amber-400 font-bold">
             <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-            <span className="text-[10px] tracking-tight">RADAR</span>
+            <span className="text-[10px] tracking-tight">{mapMode === 'radar' ? 'RADAR' : 'WORLD'}</span>
             <span className="text-[9px] text-slate-400">
               ({Math.round(playerX)},{Math.round(playerY)})
+            </span>
+            {/* Fog of war exploration percentage */}
+            <span
+              className="text-[9px] px-1 py-0.2 bg-amber-950/70 text-amber-300 border border-amber-600/50 rounded font-bold ml-0.5"
+              title={`${stats.count} of ${stats.total} realm tiles explored`}
+            >
+              {stats.percent}%
             </span>
           </div>
 
@@ -415,24 +571,24 @@ export const MiniMap: React.FC<MiniMapProps> = ({
               {isExpanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
             </button>
 
-            {/* Collapse / Hide */}
+            {/* Collapse to World Icon */}
             <button
               onClick={() => setIsCollapsed(true)}
-              title="Minimize Minimap to pill"
+              title="Reduce to World Icon (M)"
               className="p-1 text-slate-400 hover:text-amber-400 transition"
             >
-              <ChevronUp className="w-3 h-3" />
+              <Globe className="w-3 h-3" />
             </button>
           </div>
         </div>
 
-        {/* Canvas Radar */}
+        {/* Canvas Radar / World with Fog of War */}
         <div className="flex justify-center items-center">
           <canvas
             ref={canvasRef}
             width={mapSize}
             height={mapSize}
-            className="cursor-crosshair rounded-lg shadow-inner bg-slate-950/80"
+            className="cursor-crosshair rounded-lg shadow-inner bg-slate-950/90"
           />
         </div>
 

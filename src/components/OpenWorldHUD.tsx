@@ -40,11 +40,12 @@ import {
   Minimize2,
   Maximize2,
 } from 'lucide-react';
-import { getBiomeAt } from '../utils/worldGenerator';
+import { getBiomeAt, TileType } from '../utils/worldGenerator';
 import { MiniMap } from './MiniMap';
 
 interface OpenWorldHUDProps {
   player: Player;
+  worldTiles?: TileType[][];
   targetEnemy: WorldMonster | null;
   mobs: WorldMonster[];
   objects: WorldObject[];
@@ -86,6 +87,7 @@ const BIOME_NAMES: Record<BiomeType, { title: string; icon: string; desc: string
 
 export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
   player,
+  worldTiles,
   targetEnemy,
   mobs,
   objects,
@@ -522,6 +524,7 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
           {!isImmersiveMode && (
             <MiniMap
               player={player}
+              worldTiles={worldTiles}
               mobs={mobs}
               objects={objects}
               peers={peers}

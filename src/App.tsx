@@ -58,6 +58,7 @@ import {
   loadSavedInventory,
   saveInventoryToStorage,
 } from './utils/storage';
+import { revealFogOfWar } from './utils/fogOfWar';
 import { lanMultiplayer } from './services/lanMultiplayer';
 
 export default function App() {
@@ -437,9 +438,11 @@ export default function App() {
       // Check biome discovery & exploration quests
       const curBiome = getBiomeAt(targetX, targetY);
       const explored = cur.exploredBiomes || ['oakhaven'];
+      let biomeDiscovered = false;
       if (!explored.includes(curBiome)) {
         const nextExplored = [...explored, curBiome];
         updated.exploredBiomes = nextExplored;
+        biomeDiscovered = true;
         updateQuestProgress((obj) => {
           if (obj.type === 'explore_biome' && obj.targetId === curBiome) return true;
           if (obj.type === 'reach_level' && obj.id === 'obj_visit_all_biomes') return true;
@@ -447,6 +450,20 @@ export default function App() {
         });
         spawnFloatingText(`DISCOVERED ${curBiome.toUpperCase()}`, targetX, targetY, 'gold');
         addLog(`🗺️ Discovered new realm biome: ${curBiome.toUpperCase()}!`, 'info');
+      }
+
+      // Check fog of war exploration and persist revealed tiles
+      const { updatedTiles, hasNew: hasNewFog } = revealFogOfWar(
+        cur.exploredTiles,
+        targetX,
+        targetY
+      );
+      if (hasNewFog) {
+        updated.exploredTiles = updatedTiles;
+      }
+
+      if (biomeDiscovered || hasNewFog) {
+        saveState(updated);
       }
 
       setPlayer(updated);
@@ -1053,12 +1070,15 @@ export default function App() {
         if (nearbyObject) handleInteractObject(nearbyObject);
       }
 
-      // Modals
+      // Modals & Map
       else if (e.key === 'q' || e.key === 'Q') setIsQuestLogOpen((prev) => !prev);
       else if (e.key === 'c' || e.key === 'C') setIsCharacterCreationOpen(true);
       else if (e.key === 'b' || e.key === 'B') setIsInventoryOpen(true);
       else if (e.key === 't' || e.key === 'T') setIsTechModalOpen(true);
-      else if (e.key === 'm' || e.key === 'M') setIsMultiplayerModalOpen(true);
+      else if (e.key === 'm' || e.key === 'M') {
+        window.dispatchEvent(new CustomEvent('valdor:toggle-minimap'));
+      }
+      else if (e.key === 'l' || e.key === 'L') setIsMultiplayerModalOpen(true);
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -1164,6 +1184,7 @@ export default function App() {
           {/* Open World HUD & Controls */}
           <OpenWorldHUD
             player={player}
+            worldTiles={worldMap.tiles}
             targetEnemy={targetEnemy}
             mobs={mobs}
             objects={objects}

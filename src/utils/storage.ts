@@ -2,6 +2,8 @@ import { Player, WorldObject, InventoryItem } from '../types/rpg';
 import { DEFAULT_INVENTORY } from './combatEngine';
 import { INITIAL_QUESTS } from './questData';
 
+import { getInitialExploredTiles } from './fogOfWar';
+
 const PLAYER_STORAGE_KEY = 'valdor_rpg_player_save_v2';
 const OBJECTS_STORAGE_KEY = 'valdor_rpg_world_objects_v2';
 const INVENTORY_STORAGE_KEY = 'valdor_rpg_inventory_v2';
@@ -30,6 +32,7 @@ export const DEFAULT_PLAYER: Player = {
   quests: INITIAL_QUESTS,
   completedQuestIds: [],
   exploredBiomes: ['oakhaven'],
+  exploredTiles: getInitialExploredTiles(18, 19, 8),
 };
 
 export function loadSavedPlayer(): Player {
@@ -50,6 +53,11 @@ export function loadSavedPlayer(): Player {
         return initQ;
       });
 
+      const initialExplored = getInitialExploredTiles(parsed.x || 18, parsed.y || 19, 8);
+      const savedExplored = Array.isArray(parsed.exploredTiles) && parsed.exploredTiles.length > 0
+        ? parsed.exploredTiles
+        : initialExplored;
+
       return {
         ...DEFAULT_PLAYER,
         ...parsed,
@@ -57,6 +65,7 @@ export function loadSavedPlayer(): Player {
         activeQuestId: parsed.activeQuestId || 'quest_wildwood_patrol',
         completedQuestIds: parsed.completedQuestIds || [],
         exploredBiomes: parsed.exploredBiomes || ['oakhaven'],
+        exploredTiles: savedExplored,
         source: 'Client-Side Persistent DB',
       };
     }
