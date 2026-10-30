@@ -1,3 +1,7 @@
+export type GameScreen = 'TITLE' | 'PLAYING' | 'GAMEOVER';
+
+export type BiomeType = 'oakhaven' | 'wildwood' | 'ruins' | 'mire' | 'caldera';
+
 export interface Player {
   id: number;
   name: string;
@@ -14,6 +18,11 @@ export interface Player {
   wins: number;
   deaths: number;
   source?: string;
+  // World spatial coordinates
+  x?: number;
+  y?: number;
+  direction?: 'up' | 'down' | 'left' | 'right';
+  isMoving?: boolean;
 }
 
 export interface HeroVisualArchetype {
@@ -48,6 +57,25 @@ export interface Monster {
   isDefending?: boolean;
 }
 
+export interface WorldMonster extends Monster {
+  instanceId: string;
+  x: number;
+  y: number;
+  startX: number;
+  startY: number;
+  biome: BiomeType;
+  state: 'idle' | 'patrol' | 'chase' | 'attack' | 'cooldown';
+  targetPlayerId?: string | null;
+  lastAttackTime: number;
+  patrolTargetX: number;
+  patrolTargetY: number;
+  level: number;
+  aggroRadius: number;
+  attackRange: number;
+  speed: number;
+  patrolRadius: number;
+}
+
 export interface CombatVerificationResult {
   verified: boolean;
   action: string;
@@ -68,6 +96,88 @@ export interface CombatVerificationResult {
   engineMessage: string;
 }
 
+export interface CppTelemetry {
+  serverStatus?: string;
+  combatCalculationsRun?: number;
+  databaseQueriesTotal?: number;
+  uptimeSeconds?: number;
+  memoryUsageMb?: number;
+  engine?: string;
+  sqliteVersion?: string;
+  combatCalculations?: number;
+}
+
+export interface WorldObject {
+  id: string;
+  type: 'chest' | 'campfire' | 'fountain' | 'shrine' | 'portal' | 'npc';
+  x: number;
+  y: number;
+  name: string;
+  icon: string;
+  opened?: boolean;
+  biome: BiomeType;
+  description: string;
+  interactionPrompt: string;
+  dialogue?: string[];
+  loot?: {
+    gold?: number;
+    potion?: string;
+    item?: string;
+  };
+}
+
+export interface Projectile {
+  id: string;
+  x: number;
+  y: number;
+  startX: number;
+  startY: number;
+  targetX: number;
+  targetY: number;
+  speed: number;
+  damage: number;
+  type: 'fireball' | 'frost' | 'arrow' | 'poison_orb';
+  ownerId: string;
+  radius: number;
+  color: string;
+}
+
+export interface WorldLootDrop {
+  id: string;
+  x: number;
+  y: number;
+  type: 'gold' | 'potion' | 'xp';
+  amount: number;
+  label: string;
+  icon: string;
+  createdAt: number;
+}
+
+export interface FloatingText {
+  id: string;
+  text: string;
+  x?: number;
+  y?: number;
+  target?: 'player' | 'enemy';
+  type: 'damage' | 'crit' | 'heal' | 'poison' | 'mana' | 'defense' | 'gold' | 'xp' | 'level';
+}
+
+export interface StatusEffects {
+  poisonTurns: number;
+  burnTurns: number;
+  shieldTurns?: number;
+  speedBuffTurns?: number;
+}
+
+export interface RewardPreview {
+  id: string;
+  gold: number;
+  xp: number;
+  monsterName: string;
+  isLevelUp?: boolean;
+  newLevel?: number;
+}
+
 export interface CombatLogEntry {
   id: string;
   text: string;
@@ -84,8 +194,11 @@ export interface CombatLogEntry {
     | 'db_save'
     | 'poison'
     | 'defensive_stance'
-    | 'burn';
+    | 'burn'
+    | 'multiplayer'
+    | 'chat';
   timestamp: string;
+  sender?: string;
 }
 
 export interface InventoryItem {
@@ -95,38 +208,55 @@ export interface InventoryItem {
   type: 'weapon' | 'armor' | 'potion' | 'relic';
   power: number;
   quantity: number;
+  description?: string;
+  icon?: string;
 }
 
-export interface CppTelemetry {
-  status: string;
-  engine: string;
-  sqliteVersion: string;
-  pid: number;
-  uptimeSeconds: number;
-  memoryRssKb: number;
-  combatCalculations: number;
-  port: number;
-}
-
-export interface FloatingText {
+export interface NetworkPeer {
   id: string;
+  name: string;
+  className: string;
+  styleId: string;
+  sprite: string;
+  x: number;
+  y: number;
+  direction: 'up' | 'down' | 'left' | 'right';
+  isMoving: boolean;
+  hp: number;
+  maxHp: number;
+  mana: number;
+  maxMana: number;
+  level: number;
+  isHost: boolean;
+  lastSeen: number;
+  lastAttackAction?: {
+    type: 'attack' | 'fireball' | 'thunder' | 'heal';
+    time: number;
+  };
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
   text: string;
-  type: 'damage' | 'heal' | 'crit' | 'mana' | 'poison' | 'defense';
-  target: 'player' | 'enemy';
+  timestamp: string;
+  isSystem?: boolean;
 }
 
-export interface StatusEffects {
-  poisonTurns: number;
-  burnTurns: number;
+export interface MultiplayerMessage {
+  type:
+    | 'JOIN'
+    | 'LEAVE'
+    | 'HEARTBEAT'
+    | 'ATTACK'
+    | 'MOB_HIT'
+    | 'MOB_STATE_SYNC'
+    | 'CHAT'
+    | 'CHEST_OPENED'
+    | 'REVIVE';
+  senderId: string;
+  senderName: string;
+  payload: any;
+  timestamp: number;
 }
-
-export interface RewardPreview {
-  id: string;
-  gold: number;
-  xp: number;
-  monsterName: string;
-  isLevelUp: boolean;
-  newLevel?: number;
-}
-
-export type GameScreen = 'TITLE' | 'CHARACTER_CREATION' | 'PLAYING' | 'PAUSED' | 'VICTORY_SCREEN' | 'DEFEAT_SCREEN';

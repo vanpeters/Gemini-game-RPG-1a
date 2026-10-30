@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Shield, Sparkles, Volume2, VolumeX, Terminal, Database, Code, FileCode } from 'lucide-react';
+import { Shield, Sparkles, Volume2, VolumeX, Terminal, Database, Code, FileCode, Users, Wifi } from 'lucide-react';
 import { Player } from '../types/rpg';
 import { sound } from '../utils/audio';
 
@@ -8,6 +8,7 @@ interface TitleScreenProps {
   player: Player | null;
   onOpenCharacterCreation: () => void;
   onOpenTechModal: () => void;
+  onOpenMultiplayer: () => void;
   isMuted: boolean;
   onToggleMute: () => void;
 }
@@ -17,6 +18,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   player,
   onOpenCharacterCreation,
   onOpenTechModal,
+  onOpenMultiplayer,
   isMuted,
   onToggleMute,
 }) => {
@@ -34,17 +36,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
   return (
     <div className="relative w-full h-screen overflow-hidden flex flex-col justify-between items-center text-slate-100 select-none bg-slate-950 font-sans">
-      {/* Cinematic Dungeon Backdrop */}
-      <img
-        src="/src/assets/images/valdor_dungeon_backdrop_1793333626022.jpg"
-        alt="Ruins of Valdor Dungeon"
-        referrerPolicy="no-referrer"
-        className="absolute inset-0 w-full h-full object-cover object-center filter brightness-[0.45] contrast-125 scale-105 transition-transform duration-10000 ease-out"
-      />
-
-      {/* Atmospheric Vignette & Purple Aether Glow */}
+      {/* Background Graphic / Atmosphere */}
+      <div className="absolute inset-0 bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950" />
       <div className="absolute inset-0 bg-radial-[circle_at_center,_transparent_20%,_rgba(5,7,12,0.85)_80%] pointer-events-none" />
-      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent pointer-events-none" />
+
+      {/* Atmospheric Star / Dust Field */}
+      <div className="absolute inset-0 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:32px_32px] opacity-15" />
 
       {/* Top Bar Navigation */}
       <header className="relative z-10 w-full max-w-6xl mx-auto flex items-center justify-between px-6 py-5">
@@ -56,7 +53,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             <span className="text-sm font-semibold tracking-wider text-amber-200 uppercase font-mono">
               Ruins of Valdor
             </span>
-            <span className="text-xs text-slate-400 block font-mono">Full-Stack Web RPG</span>
+            <span className="text-xs text-slate-400 block font-mono">Open World • LAN Co-Op RPG</span>
           </div>
         </div>
 
@@ -64,10 +61,21 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           <button
             onClick={() => {
               sound.playClick();
+              onOpenMultiplayer();
+            }}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded border border-blue-500/40 bg-blue-950/40 hover:bg-blue-900/60 text-blue-300 text-xs font-mono transition-all cursor-pointer"
+          >
+            <Users className="w-3.5 h-3.5 text-cyan-400" />
+            <span>LAN Co-Op Lobby</span>
+          </button>
+
+          <button
+            onClick={() => {
+              sound.playClick();
               onOpenTechModal();
             }}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded border border-purple-500/30 bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 text-xs font-mono transition-all duration-150 cursor-pointer"
-            title="Inspect all 6 integrated technologies"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded border border-purple-500/30 bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 text-xs font-mono transition-all cursor-pointer"
+            title="Inspect client-side architecture & XML bestiary"
           >
             <Terminal className="w-3.5 h-3.5 text-purple-400" />
             <span>Tech Inspector</span>
@@ -124,15 +132,15 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
 
         <p className="text-slate-300 text-sm sm:text-base max-w-xl font-serif italic mb-6 leading-relaxed">
-          Descend into the forgotten sepulchers of Valdor. Face ancient horrors driven by XML bestiary
-          parameters, combat verified through native C++, and saved to persistent SQLite.
+          Embark on an open-world fantasy adventure across 5 biomes. Face XML bestiary monsters in real time,
+          uncover ancient relics, and explore together with friends over LAN multiplayer.
         </p>
 
         {/* Hero Character Card Pill */}
         {player && (
           <div className="mb-8 px-4 py-2.5 rounded-lg border border-slate-800 bg-slate-900/80 backdrop-blur-sm flex items-center gap-4 text-xs font-mono text-slate-300">
             <span className="flex items-center gap-1.5 text-amber-300">
-              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span className="text-lg">{player.sprite || '🛡️'}</span>
               Hero: {player.name}
             </span>
             <span>·</span>
@@ -140,7 +148,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             <span>·</span>
             <span className="text-yellow-400">💰 {player.gold} Gold</span>
             <span>·</span>
-            <span className="text-cyan-400">💾 {player.source || 'SQLite'}</span>
+            <span className="text-cyan-400">📍 Oakhaven Hamlet</span>
           </div>
         )}
 
@@ -151,12 +159,23 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               sound.playClick();
               onStart();
             }}
-            className="group relative px-8 py-3.5 rounded-md font-mono text-sm uppercase tracking-wider font-bold text-slate-950 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 shadow-[0_0_25px_rgba(234,179,8,0.45)] hover:shadow-[0_0_35px_rgba(234,179,8,0.65)] transform hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150 cursor-pointer"
+            className="group relative px-8 py-3.5 rounded-md font-mono text-sm uppercase tracking-wider font-bold text-slate-950 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 shadow-[0_0_25px_rgba(234,179,8,0.45)] hover:shadow-[0_0_35px_rgba(234,179,8,0.65)] transform hover:-translate-y-0.5 active:translate-y-0 transition-all cursor-pointer"
           >
             <span className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-900" />
-              Enter The Ruins (Start)
+              Explore Open World (Start)
             </span>
+          </button>
+
+          <button
+            onClick={() => {
+              sound.playClick();
+              onOpenMultiplayer();
+            }}
+            className="px-6 py-3.5 rounded-md font-mono text-sm uppercase tracking-wider font-bold text-cyan-300 border border-cyan-500/50 bg-cyan-950/40 hover:bg-cyan-900/60 hover:text-cyan-200 transition-all cursor-pointer flex items-center gap-2"
+          >
+            <Users className="w-4 h-4 text-cyan-400" />
+            <span>LAN Co-Op Room</span>
           </button>
 
           <button
@@ -164,7 +183,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               sound.playClick();
               onOpenCharacterCreation();
             }}
-            className="px-6 py-3.5 rounded-md font-mono text-sm uppercase tracking-wider font-bold text-amber-300 border border-amber-500/50 bg-amber-950/40 hover:bg-amber-900/60 hover:text-amber-200 transition-all duration-150 cursor-pointer flex items-center gap-2"
+            className="px-6 py-3.5 rounded-md font-mono text-sm uppercase tracking-wider font-bold text-amber-300 border border-amber-500/50 bg-amber-950/40 hover:bg-amber-900/60 hover:text-amber-200 transition-all cursor-pointer flex items-center gap-2"
           >
             <span>Forge New Hero</span>
           </button>
@@ -172,7 +191,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
         {/* Control Hints */}
         <div className="mt-4 text-slate-400 text-xs font-mono tracking-wider">
-          Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300">Space</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300">Enter</kbd> to begin · <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300">C</kbd> Character Creation
+          Move with <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300">W A S D</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300">Arrows</kbd> · Attack <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300">1 2 3</kbd> · Interact <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300">E</kbd>
         </div>
       </main>
 
@@ -181,23 +200,23 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-slate-400">
           <div className="flex items-center gap-4 flex-wrap">
             <span className="flex items-center gap-1.5 text-orange-400">
-              <Code className="w-3.5 h-3.5" /> HTML/CSS UI
+              <Code className="w-3.5 h-3.5" /> HTML/CSS Pixel UI
             </span>
             <span className="text-slate-600">·</span>
             <span className="flex items-center gap-1.5 text-yellow-400">
-              <FileCode className="w-3.5 h-3.5" /> JS Game Loop
+              <FileCode className="w-3.5 h-3.5" /> JS/TS Open-World Engine
             </span>
             <span className="text-slate-600">·</span>
             <span className="flex items-center gap-1.5 text-cyan-400">
-              <FileCode className="w-3.5 h-3.5" /> XML (DOMParser)
+              <FileCode className="w-3.5 h-3.5" /> XML Bestiary (DOMParser)
             </span>
             <span className="text-slate-600">·</span>
             <span className="flex items-center gap-1.5 text-emerald-400">
-              <Database className="w-3.5 h-3.5" /> SQLite3 (rpg.db)
+              <Database className="w-3.5 h-3.5" /> Client SQL Persistence
             </span>
             <span className="text-slate-600">·</span>
-            <span className="flex items-center gap-1.5 text-purple-400">
-              <Terminal className="w-3.5 h-3.5" /> C++17 REST Engine
+            <span className="flex items-center gap-1.5 text-blue-400">
+              <Wifi className="w-3.5 h-3.5" /> LAN P2P Multiplayer (WebRTC)
             </span>
           </div>
 
@@ -208,7 +227,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             }}
             className="text-amber-400 hover:text-amber-300 hover:underline transition-colors cursor-pointer"
           >
-            View Live Tech Diagnostics →
+            Architecture Diagnostics →
           </button>
         </div>
       </footer>

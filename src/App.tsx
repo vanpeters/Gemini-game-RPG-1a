@@ -1,56 +1,82 @@
 /**
- * Ruins of Valdor - Full-Stack Web RPG
+ * Ruins of Valdor - Open World Client-Side RPG with LAN Multiplayer
  *
- * Actively integrates:
- * 1. HTML & CSS: UI HUD, Battle Arena, pixel-art health bars, CRT scanlines
- * 2. JavaScript: Client game loop, DOMParser XML extraction, Web Audio synth
- * 3. XML: enemies.xml bestiary configuration (38 monsters)
- * 4. Database: Persistent SQLite (rpg.db) for player stats and inventory
- * 5. C++: Native REST API server for combat roll verification & DB transactions
+ * Technologies:
+ * 1. HTML & CSS: Retro HUD, pixel health bars, CRT scanline shader, modal dialogs
+ * 2. JavaScript / TypeScript: 60 FPS Canvas 2D engine, game loop, Web Audio synth
+ * 3. XML Bestiary: 38 monster definitions loaded from enemies.xml via native DOMParser
+ * 4. Relational Database: Client-side persistent storage and relational SQL table schema
+ * 5. LAN Multiplayer: Real-time peer-to-peer sync via BroadcastChannel & WebRTC DataChannels
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TitleScreen } from './components/TitleScreen';
-import { BattleArena } from './components/BattleArena';
+import { OpenWorldCanvas } from './components/OpenWorldCanvas';
+import { OpenWorldHUD } from './components/OpenWorldHUD';
+import { LanMultiplayerModal } from './components/LanMultiplayerModal';
+import { CharacterCreationModal } from './components/CharacterCreationModal';
 import { TechInspectorModal } from './components/TechInspectorModal';
 import { InventoryModal } from './components/InventoryModal';
-import { CharacterCreationModal } from './components/CharacterCreationModal';
+import { WorldNPCModal } from './components/WorldNPCModal';
+import { TouchControls } from './components/TouchControls';
+import { useGamepad } from './hooks/useGamepad';
 import {
   Player,
   Monster,
+  WorldMonster,
+  WorldObject,
+  NetworkPeer,
+  Projectile,
+  WorldLootDrop,
   CombatLogEntry,
   FloatingText,
-  CppTelemetry,
-  GameScreen,
-  InventoryItem,
   StatusEffects,
   RewardPreview,
+  InventoryItem,
+  GameScreen,
 } from './types/rpg';
+import {
+  generateOpenWorld,
+  isTileCollidable,
+  spawnOpenWorldMonsters,
+  TILE_SIZE,
+  WORLD_WIDTH,
+  WORLD_HEIGHT,
+  getBiomeAt,
+} from './utils/worldGenerator';
 import { parseBestiaryXML } from './utils/xmlParser';
+import { calculateCombatAction } from './utils/combatEngine';
 import { sound } from './utils/audio';
+import {
+  loadSavedPlayer,
+  savePlayerToStorage,
+  loadSavedWorldObjects,
+  saveWorldObjectsState,
+  loadSavedInventory,
+  saveInventoryToStorage,
+} from './utils/storage';
+import { lanMultiplayer } from './services/lanMultiplayer';
 
 export default function App() {
   const [screen, setScreen] = useState<GameScreen>('TITLE');
-  const [player, setPlayer] = useState<Player>({
-    id: 1,
-    name: 'Valen the Brave',
-    class: 'Rune Knight',
-    styleId: 'knight',
-    sprite: '🛡️',
-    level: 1,
-    hp: 100,
-    maxHp: 100,
-    mana: 50,
-    maxMana: 50,
-    gold: 25,
-    xp: 0,
-    wins: 0,
-    deaths: 0,
-    source: 'Loading...',
-  });
+  const [player, setPlayer] = useState<Player>(loadSavedPlayer);
+  const playerRef = useRef<Player>(player);
+  playerRef.current = player;
 
-  const [monsters, setMonsters] = useState<Monster[]>([]);
-  const [currentEnemy, setCurrentEnemy] = useState<Monster | null>(null);
+  // World Data
+  const [worldMap] = useState(() => generateOpenWorld());
+  const [objects, setObjects] = useState<WorldObject[]>(() =>
+    loadSavedWorldObjects(worldMap.objects)
+  );
+  const [bestiary, setBestiary] = useState<Monster[]>([]);
+  const [mobs, setMobs] = useState<WorldMonster[]>([]);
+  const mobsRef = useRef<WorldMonster[]>(mobs);
+  mobsRef.current = mobs;
+
+  // Combat & Entities
+  const [targetEnemy, setTargetEnemy] = useState<WorldMonster | null>(null);
+  const [projectiles, setProjectiles] = useState<Projectile[]>([]);
+  const [lootDrops, setLootDrops] = useState<WorldLootDrop[]>([]);
   const [logs, setLogs] = useState<CombatLogEntry[]>([]);
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
   const [statusEffects, setStatusEffects] = useState<StatusEffects>({
@@ -58,433 +84,683 @@ export default function App() {
     burnTurns: 0,
   });
   const [rewardPreview, setRewardPreview] = useState<RewardPreview | null>(null);
-  const [isActing, setIsActing] = useState(false);
-  const [cppStats, setCppStats] = useState<CppTelemetry | null>(null);
 
-  // Modals & settings
+  // LAN Multiplayer State
+  const [peers, setPeers] = useState<NetworkPeer[]>([]);
+  const [roomCode, setRoomCode] = useState<string>('VALDOR-LAN');
+  const [isHost, setIsHost] = useState<boolean>(true);
+  const [ping, setPing] = useState<number>(2);
+
+  // Modals & UI
+  const [isMultiplayerModalOpen, setIsMultiplayerModalOpen] = useState(false);
   const [isCharacterCreationOpen, setIsCharacterCreationOpen] = useState(false);
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
+  const [activeNpcObject, setActiveNpcObject] = useState<WorldObject | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [crtEnabled, setCrtEnabled] = useState(true);
+  const [touchControlsEnabled, setTouchControlsEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      'ontouchstart' in window ||
+      (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) ||
+      (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+    );
+  });
+  const triggerRumbleRef = useRef<(duration?: number, weak?: number, strong?: number) => void>(() => {});
 
+  // Logging Helper
   const addLog = useCallback(
-    (text: string, type: CombatLogEntry['type'] = 'info') => {
+    (text: string, type: CombatLogEntry['type'] = 'info', sender?: string) => {
       const entry: CombatLogEntry = {
         id: Math.random().toString(36).substring(2, 9),
         text,
         type,
-        timestamp: new Date().toLocaleTimeString([], { hour12: false }),
+        timestamp: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        sender,
       };
-      setLogs((prev) => [...prev.slice(-40), entry]);
+      setLogs((prev) => [...prev.slice(-50), entry]);
     },
     []
   );
 
+  // Floating Text Spawner
   const spawnFloatingText = useCallback(
-    (text: string, target: 'player' | 'enemy', type: FloatingText['type'] = 'damage') => {
+    (text: string, x?: number, y?: number, type: FloatingText['type'] = 'damage') => {
       const id = Math.random().toString(36).substring(2, 9);
-      setFloatingTexts((prev) => [...prev, { id, text, target, type }]);
+      setFloatingTexts((prev) => [...prev, { id, text, x, y, type }]);
       setTimeout(() => {
         setFloatingTexts((prev) => prev.filter((item) => item.id !== id));
-      }, 1000);
+      }, 1200);
     },
     []
   );
 
-  // 1. Fetch Player from SQLite via C++ API
-  const loadPlayer = useCallback(async () => {
+  // 1. Fetch XML Bestiary and spawn initial mobs
+  const loadBestiaryFromXml = useCallback(async () => {
     try {
-      const res = await fetch('/api/player');
-      if (res.ok) {
-        const data = await res.json();
-        setPlayer((prev) => ({
-          ...prev,
-          id: data.id || prev.id,
-          name: data.name || prev.name,
-          class: data.class || prev.class,
-          styleId: data.styleId || prev.styleId || 'knight',
-          sprite: data.sprite || prev.sprite || '🛡️',
-          level: data.level || prev.level,
-          hp: data.hp ?? prev.hp,
-          maxHp: data.maxHp ?? prev.maxHp,
-          mana: data.mana ?? prev.mana,
-          maxMana: data.maxMana ?? prev.maxMana,
-          gold: data.gold ?? prev.gold,
-          xp: data.xp ?? prev.xp,
-          wins: data.wins ?? prev.wins,
-          deaths: data.deaths ?? prev.deaths,
-          source: data.source || 'SQLite3 (rpg.db)',
-        }));
-        addLog('Loaded player hero profile from persistent SQLite via C++ backend.', 'db_save');
-      }
-    } catch {
-      addLog('C++ backend unreachable, continuing with memory state.', 'info');
-    }
-  }, [addLog]);
-
-  // 2. Fetch and parse enemies.xml with DOMParser
-  const loadMonstersFromXML = useCallback(async () => {
-    try {
-      const res = await fetch('/api/xml/bestiary');
-      if (!res.ok) throw new Error('XML endpoint returned status ' + res.status);
+      const res = await fetch('/enemies.xml');
+      if (!res.ok) throw new Error('Could not load enemies.xml');
       const xmlText = await res.text();
       const parsed = parseBestiaryXML(xmlText);
-      setMonsters(parsed);
-      addLog(`Extracted ${parsed.length} monster archetypes from enemies.xml via DOMParser.`, 'info');
-
-      // Pick random enemy
-      if (parsed.length > 0) {
-        const randomMob = parsed[Math.floor(Math.random() * parsed.length)];
-        setCurrentEnemy({ ...randomMob, hp: randomMob.maxHp, isDefending: false });
-      }
+      setBestiary(parsed);
+      const spawned = spawnOpenWorldMonsters(parsed);
+      setMobs(spawned);
+      addLog(`Loaded ${parsed.length} monster archetypes from enemies.xml via DOMParser.`, 'info');
     } catch (err: any) {
-      addLog(`Failed to parse XML: ${err.message}`, 'info');
+      addLog(`Failed to load XML Bestiary: ${err.message}`, 'info');
     }
   }, [addLog]);
 
-  // 3. Save Game State to SQLite via C++ POST
-  const saveGame = useCallback(
-    async (overridePlayer?: Partial<Player>) => {
-      const p = { ...player, ...overridePlayer };
-      try {
-        const payload = `name=${encodeURIComponent(p.name)}&class=${encodeURIComponent(
-          p.class
-        )}&styleId=${encodeURIComponent(p.styleId || 'knight')}&sprite=${encodeURIComponent(
-          p.sprite || '🛡️'
-        )}&hp=${p.hp}&maxHp=${p.maxHp}&mana=${p.mana}&maxMana=${p.maxMana}&gold=${p.gold}&xp=${
-          p.xp
-        }&level=${p.level}&wins=${p.wins}&deaths=${p.deaths}`;
+  // 2. Initialize Multiplayer & URL Room check
+  useEffect(() => {
+    loadBestiaryFromXml();
 
-        const res = await fetch('/api/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: payload,
-        });
-        if (res.ok) {
-          sound.playClick();
-          addLog('Game state successfully saved to SQLite database via C++ backend!', 'db_save');
-          spawnFloatingText('SAVED TO DB', 'player', 'mana');
-        }
-      } catch {
-        addLog('Failed to persist to SQLite backend.', 'info');
+    const params = new URLSearchParams(window.location.search);
+    const urlRoom = params.get('room') || 'VALDOR-LAN';
+    const isUrlHost = !params.has('room');
+
+    setRoomCode(urlRoom);
+    setIsHost(isUrlHost);
+    lanMultiplayer.connect(urlRoom, isUrlHost);
+
+    addLog(`Connected to LAN Multiplayer Session [${urlRoom}]. Ready for co-op!`, 'multiplayer');
+
+    // Subscribe to incoming network messages
+    const unsubscribe = lanMultiplayer.onMessage((msg) => {
+      if (msg.type === 'CHAT') {
+        sound.playClick();
+        addLog(msg.payload.text, 'chat', msg.payload.senderName);
+      } else if (msg.type === 'ATTACK') {
+        sound.playSlash();
+        const action = msg.payload.action;
+        addLog(`${msg.senderName} unleashed [${action.toUpperCase()}]!`, 'multiplayer');
+      } else if (msg.type === 'MOB_HIT') {
+        const { instanceId, damage, attackerName } = msg.payload;
+        setMobs((prev) =>
+          prev.map((m) => {
+            if (m.instanceId === instanceId) {
+              const nextHp = Math.max(0, m.hp - damage);
+              return { ...m, hp: nextHp };
+            }
+            return m;
+          })
+        );
+        addLog(`${attackerName} struck an enemy for ${damage} DMG!`, 'player_atk');
+      } else if (msg.type === 'MOB_STATE_SYNC' && !isHost) {
+        // Sync mob positions from host
+        const syncedList = msg.payload.mobs as Array<{ instanceId: string; x: number; y: number; hp: number; isDefending?: boolean }>;
+        setMobs((prev) =>
+          prev.map((localMob) => {
+            const found = syncedList.find((s) => s.instanceId === localMob.instanceId);
+            if (found) {
+              return { ...localMob, x: found.x, y: found.y, hp: found.hp, isDefending: found.isDefending };
+            }
+            return localMob;
+          })
+        );
       }
+    });
+
+    return () => {
+      unsubscribe();
+      lanMultiplayer.disconnect();
+    };
+  }, [loadBestiaryFromXml, addLog]);
+
+  // 3. Heartbeat loop to broadcast player presence to LAN peers
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const p = playerRef.current;
+      lanMultiplayer.sendHeartbeat({
+        name: p.name,
+        className: p.class,
+        styleId: p.styleId || 'knight',
+        sprite: p.sprite || '🛡️',
+        x: p.x ?? 18,
+        y: p.y ?? 19,
+        direction: p.direction || 'down',
+        isMoving: Boolean(p.isMoving),
+        hp: p.hp,
+        maxHp: p.maxHp,
+        mana: p.mana,
+        maxMana: p.maxMana,
+        level: p.level,
+      });
+
+      setPeers(lanMultiplayer.getPeers());
+      setPing(lanMultiplayer.getPing());
+
+      // If host, sync mobs to other peers periodically
+      if (isHost && mobsRef.current.length > 0) {
+        lanMultiplayer.syncWorldMobs(mobsRef.current);
+      }
+    }, 120);
+
+    return () => clearInterval(interval);
+  }, [isHost]);
+
+  // 4. Save player state periodically
+  const saveState = useCallback(
+    (updatedPlayer?: Player) => {
+      const toSave = updatedPlayer || playerRef.current;
+      savePlayerToStorage(toSave);
+      saveWorldObjectsState(objects);
     },
-    [player, addLog, spawnFloatingText]
+    [objects]
   );
 
-  // 4. Fetch C++ Telemetry
-  const fetchCppTelemetry = useCallback(async () => {
-    try {
-      const res = await fetch('/api/cpp/status');
-      if (res.ok) {
-        const data = await res.json();
-        setCppStats(data);
+  // 5. Player Movement Handler
+  const movePlayer = useCallback(
+    (dx: number, dy: number, direction: 'up' | 'down' | 'left' | 'right') => {
+      const cur = playerRef.current;
+      const targetX = (cur.x ?? 18) + dx;
+      const targetY = (cur.y ?? 19) + dy;
+
+      // Check tile collision
+      const tileCol = Math.round(targetX);
+      const tileRow = Math.round(targetY);
+
+      if (isTileCollidable(worldMap.tiles, tileCol, tileRow)) {
+        return;
       }
-    } catch {}
-  }, []);
 
-  // Initial load
-  useEffect(() => {
-    loadPlayer();
-    loadMonstersFromXML();
-    fetchCppTelemetry();
-    const interval = setInterval(fetchCppTelemetry, 5000);
-    return () => clearInterval(interval);
-  }, [loadPlayer, loadMonstersFromXML, fetchCppTelemetry]);
+      const updated = {
+        ...cur,
+        x: targetX,
+        y: targetY,
+        direction,
+        isMoving: true,
+      };
 
-  // Spawn enemy helper
-  const spawnNewEnemy = useCallback(() => {
-    if (monsters.length === 0) return;
-    const template = monsters[Math.floor(Math.random() * monsters.length)];
-    const newEnemy = { ...template, hp: template.maxHp, isDefending: false };
-    setCurrentEnemy(newEnemy);
-    addLog(
-      `A wild ${newEnemy.name} (${newEnemy.element}) emerges! Special: [${newEnemy.specialAbility}]`,
-      'info'
-    );
-  }, [monsters, addLog]);
+      setPlayer(updated);
+      playerRef.current = updated;
 
-  // Combat Action Execution through C++ REST API
+      // Check nearby interactive objects
+      const nearObj = objects.find(
+        (obj) => Math.hypot(obj.x - targetX, obj.y - targetY) < 1.3
+      );
+      if (nearObj && nearObj.type === 'fountain') {
+        // Auto-heal at fountain
+        if (cur.hp < cur.maxHp || cur.mana < cur.maxMana) {
+          sound.playPotion();
+          const healed = { ...cur, hp: cur.maxHp, mana: cur.maxMana };
+          setPlayer(healed);
+          setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
+          spawnFloatingText('REJUVENATED', targetX, targetY, 'heal');
+          addLog('Bathed in the Fountain of Rejuvenation! Full HP/MP restored.', 'heal');
+        }
+      }
+
+      // Check loot drop collection
+      setLootDrops((prev) => {
+        const remaining: WorldLootDrop[] = [];
+        prev.forEach((drop) => {
+          if (Math.hypot(drop.x - targetX, drop.y - targetY) < 1.2) {
+            sound.playCrit();
+            if (drop.type === 'gold') {
+              const nextGold = cur.gold + drop.amount;
+              setPlayer((p) => ({ ...p, gold: nextGold }));
+              spawnFloatingText(`+${drop.amount} Gold`, targetX, targetY, 'gold');
+              addLog(`Retrieved ${drop.amount} Gold from fallen beast.`, 'info');
+            } else if (drop.type === 'potion') {
+              spawnFloatingText('+1 Crimson Potion', targetX, targetY, 'heal');
+              addLog('Picked up Crimson Potion.', 'heal');
+            }
+          } else {
+            remaining.push(drop);
+          }
+        });
+        return remaining;
+      });
+    },
+    [worldMap.tiles, objects, spawnFloatingText, addLog]
+  );
+
+  // 6. Combat Execution (Melee Strike, Spells, Potions)
   const handleCombatAction = useCallback(
-    async (action: 'attack' | 'fireball' | 'thunder' | 'potion') => {
-      if (isActing || !currentEnemy || currentEnemy.hp <= 0) return;
-      setIsActing(true);
+    (action: 'attack' | 'fireball' | 'thunder' | 'potion') => {
+      const cur = playerRef.current;
+      if (cur.hp <= 0) return;
 
-      // Play initiation sound
+      // Find nearest enemy in front/range
+      const activeMobs = mobsRef.current.filter((m) => m.hp > 0);
+      let target = targetEnemy;
+
+      if (!target || target.hp <= 0) {
+        // Auto-target nearest
+        let closestDist = 999;
+        for (const m of activeMobs) {
+          const dist = Math.hypot(m.x - (cur.x ?? 18), m.y - (cur.y ?? 19));
+          if (dist < closestDist) {
+            closestDist = dist;
+            target = m;
+          }
+        }
+      }
+
+      if (action === 'potion') {
+        sound.playPotion();
+        const healedHp = Math.min(cur.maxHp, cur.hp + 50);
+        setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
+        const updated = { ...cur, hp: healedHp };
+        setPlayer(updated);
+        saveState(updated);
+        spawnFloatingText('+50 HP', cur.x, cur.y, 'heal');
+        addLog('Quaffed Crimson Potion! Restored +50 HP and cured poison.', 'heal');
+        return;
+      }
+
+      if (!target) {
+        addLog('No monsters in range! Explore the biomes to find beasts.', 'info');
+        return;
+      }
+
+      const dist = Math.hypot(target.x - (cur.x ?? 18), target.y - (cur.y ?? 19));
+
+      // Range check
+      if (action === 'attack' && dist > 2.8) {
+        addLog(`${target.name} is out of melee range! Move closer.`, 'info');
+        return;
+      }
+
+      // Play Sound
       if (action === 'attack') sound.playSlash();
       else if (action === 'fireball') sound.playFireball();
       else if (action === 'thunder') sound.playThunder();
-      else if (action === 'potion') sound.playPotion();
 
-      try {
-        const payload = `action=${action}&monsterName=${encodeURIComponent(
-          currentEnemy.name
-        )}&monsterAbility=${encodeURIComponent(
-          currentEnemy.specialAbility || 'none'
-        )}&isEnemyDefending=${currentEnemy.isDefending ? 'true' : 'false'}&playerHp=${
-          player.hp
-        }&playerMaxHp=${player.maxHp}&playerMana=${player.mana}&enemyHp=${
-          currentEnemy.hp
-        }&enemyMaxHp=${currentEnemy.maxHp}&enemyAtk=${currentEnemy.atk}`;
+      // Spawn projectile visual for spells
+      if (action === 'fireball' || action === 'thunder') {
+        const projId = 'proj_' + Math.random().toString(36).substring(2, 9);
+        setProjectiles((prev) => [
+          ...prev,
+          {
+            id: projId,
+            x: cur.x ?? 18,
+            y: cur.y ?? 19,
+            startX: cur.x ?? 18,
+            startY: cur.y ?? 19,
+            targetX: target!.x,
+            targetY: target!.y,
+            speed: 5,
+            damage: 25,
+            type: action === 'fireball' ? 'fireball' : 'frost',
+            ownerId: 'player',
+            radius: 7,
+            color: action === 'fireball' ? '#f97316' : '#38bdf8',
+          },
+        ]);
 
-        const res = await fetch('/api/combat/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: payload,
+        setTimeout(() => {
+          setProjectiles((p) => p.filter((x) => x.id !== projId));
+        }, 350);
+      }
+
+      // Notify LAN peers of attack
+      lanMultiplayer.sendAttackAction(action, { x: target.x, y: target.y });
+
+      // Run Combat Engine Calculation
+      const result = calculateCombatAction({
+        action,
+        player: cur,
+        monster: target,
+      });
+
+      // Defensive stance mitigated
+      if (result.damageMitigated) {
+        spawnFloatingText('BLOCKED (-50%)', target.x, target.y, 'defense');
+        addLog(`🛡️ ${target.name}'s Defensive Stance absorbed 50% damage!`, 'defensive_stance');
+      }
+
+      // Floating damage & sounds
+      if (result.critical) {
+        sound.playCrit();
+        triggerRumbleRef.current(160, 0.7, 0.9);
+        spawnFloatingText(`CRIT! -${result.damageDealt}`, target.x, target.y, 'crit');
+        addLog(`CRITICAL HIT! You strike ${target.name} for ${result.damageDealt} DMG!`, 'crit');
+      } else if (result.damageDealt > 0) {
+        triggerRumbleRef.current(80, 0.3, 0.4);
+        spawnFloatingText(`-${result.damageDealt}`, target.x, target.y, 'damage');
+        addLog(`You strike ${target.name} for ${result.damageDealt} DMG.`, 'player_atk');
+      }
+
+      // Notify LAN peers of mob damage
+      lanMultiplayer.notifyMobHit(target.instanceId, result.damageDealt, cur.name);
+
+      // Handle enemy special abilities
+      if (result.poisonInflicted) {
+        setStatusEffects((prev) => ({ ...prev, poisonTurns: 3 }));
+        spawnFloatingText('POISONED!', cur.x, cur.y, 'poison');
+        addLog(`🤢 ${target.name} delivered venomous poison! You will take damage over time.`, 'poison');
+      }
+
+      if (result.enterDefensiveStance) {
+        addLog(`🛡️ ${target.name} enters a fortified Defensive Stance! Incoming damage halved.`, 'defensive_stance');
+      }
+
+      // Update Mob HP
+      const updatedMobHp = result.enemyHp;
+      setMobs((prev) =>
+        prev.map((m) =>
+          m.instanceId === target!.instanceId
+            ? { ...m, hp: updatedMobHp, isDefending: result.enterDefensiveStance }
+            : m
+        )
+      );
+
+      // Update Target Enemy reference
+      setTargetEnemy((prev) =>
+        prev && prev.instanceId === target!.instanceId
+          ? { ...prev, hp: updatedMobHp, isDefending: result.enterDefensiveStance }
+          : prev
+      );
+
+      // Mob Defeated check
+      if (updatedMobHp <= 0) {
+        sound.playVictory();
+        const goldGained = target.gold || 30;
+        const xpGained = target.expReward || 40;
+
+        // Spawn world loot drops
+        setLootDrops((prev) => [
+          ...prev,
+          {
+            id: 'loot_' + Math.random().toString(36).substring(2, 9),
+            x: target!.x,
+            y: target!.y,
+            type: 'gold',
+            amount: goldGained,
+            label: `+${goldGained} Gold`,
+            icon: '💰',
+            createdAt: Date.now(),
+          },
+        ]);
+
+        const nextXp = cur.xp + xpGained;
+        const nextGold = cur.gold + goldGained;
+        const nextWins = cur.wins + 1;
+        let nextLevel = cur.level;
+        let nextMaxHp = cur.maxHp;
+        let nextHp = result.playerHp;
+        let nextMaxMana = cur.maxMana;
+        let nextMana = result.playerMana;
+        const didLevelUp = nextXp >= nextLevel * 100;
+
+        if (didLevelUp) {
+          nextLevel += 1;
+          nextMaxHp += 25;
+          nextHp = nextMaxHp;
+          nextMaxMana += 15;
+          nextMana = nextMaxMana;
+          spawnFloatingText(`⭐ LEVEL UP! (Lv.${nextLevel})`, cur.x, cur.y, 'level');
+          addLog(`⭐ LEVEL UP! ${cur.name} advanced to Level ${nextLevel}! Attributes surged.`, 'heal');
+        }
+
+        // Trigger reward preview
+        setRewardPreview({
+          id: Math.random().toString(36).substring(2, 9),
+          gold: goldGained,
+          xp: xpGained,
+          monsterName: target.name,
+          isLevelUp: didLevelUp,
+          newLevel: didLevelUp ? nextLevel : undefined,
         });
 
-        if (res.ok) {
-          const result = await res.json();
+        setTimeout(() => setRewardPreview(null), 2500);
 
-          // Defensive stance absorption notification
-          if (result.damageMitigated) {
-            spawnFloatingText('BLOCKED (-50%)', 'enemy', 'defense');
-            addLog(`🛡️ ${currentEnemy.name}'s Defensive Stance absorbed 50% damage!`, 'defensive_stance');
-          }
+        addLog(`🏆 Defeated ${target.name}! Gained +${goldGained} Gold & +${xpGained} XP.`, 'victory');
 
-          // Sound and floating text for player action
-          if (result.critical) {
-            sound.playCrit();
-            spawnFloatingText(`CRITICAL! -${result.damageDealt}`, 'enemy', 'crit');
-            addLog(`CRITICAL HIT! You strike ${currentEnemy.name} for ${result.damageDealt} DMG!`, 'crit');
-          } else if (result.healAmount > 0) {
-            spawnFloatingText(`+${result.healAmount} HP`, 'player', 'heal');
-            addLog(`Quaffed Crimson Potion! Restored ${result.healAmount} HP and purified toxins.`, 'heal');
-            // Potion cures poison and burn!
-            setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
-          } else if (result.damageDealt > 0) {
-            spawnFloatingText(`-${result.damageDealt}`, 'enemy', 'damage');
-            addLog(`You strike ${currentEnemy.name} for ${result.damageDealt} DMG.`, 'player_atk');
-          }
+        const updatedHero: Player = {
+          ...cur,
+          hp: nextHp,
+          maxHp: nextMaxHp,
+          mana: nextMana,
+          maxMana: nextMaxMana,
+          gold: nextGold,
+          xp: nextXp,
+          level: nextLevel,
+          wins: nextWins,
+        };
 
-          addLog(`[C++ Roll #${result.calculationId}]: ${result.engineMessage}`, 'cpp_engine');
+        setPlayer(updatedHero);
+        saveState(updatedHero);
+        setTargetEnemy(null);
+        return;
+      }
 
-          // Handle special monster abilities returned by C++ verification
-          let nextEnemyDefending = false;
-          if (result.enterDefensiveStance) {
-            nextEnemyDefending = true;
-            addLog(`🛡️ ${currentEnemy.name} enters an impenetrable Defensive Stance! Incoming damage halved next turn.`, 'defensive_stance');
-            spawnFloatingText('DEFENSIVE STANCE', 'enemy', 'defense');
-          }
+      // Enemy Counterattack
+      if (result.damageTaken > 0) {
+        setTimeout(() => {
+          sound.playEnemyHit();
+          triggerRumbleRef.current(140, 0.6, 0.6);
+          spawnFloatingText(`-${result.damageTaken}`, cur.x, cur.y, 'damage');
+          addLog(`${target!.name} retaliates for ${result.damageTaken} DMG!`, 'enemy_atk');
 
-          if (result.poisonInflicted) {
-            setStatusEffects((prev) => ({ ...prev, poisonTurns: 3 }));
-            spawnFloatingText('POISONED!', 'player', 'poison');
-            addLog(`🤢 ${currentEnemy.name} delivered virulent poison! You will suffer damage over time.`, 'poison');
-          }
-
-          if (result.abilityTriggered === 'burn') {
-            setStatusEffects((prev) => ({ ...prev, burnTurns: 2 }));
-            spawnFloatingText('BURNING!', 'player', 'damage');
-            addLog(`🔥 ${currentEnemy.name} ignited your armor! Suffering burn damage.`, 'burn');
-          }
-
-          if (result.lifeDrained > 0) {
-            spawnFloatingText(`+${result.lifeDrained} HP`, 'enemy', 'heal');
-            addLog(`🩸 ${currentEnemy.name} siphoned lifeforce and restored +${result.lifeDrained} HP!`, 'heal');
-          }
-
-          // Update enemy state
-          setCurrentEnemy((prev) =>
-            prev ? { ...prev, hp: result.enemyHp, isDefending: nextEnemyDefending } : null
-          );
-
-          // Update player HP & Mana from C++ roll
-          let updatedPlayerHp = result.playerHp;
-          setPlayer((prev) => ({
-            ...prev,
-            hp: updatedPlayerHp,
-            mana: result.playerMana,
-          }));
-
-          // Enemy defeated check
-          if (result.enemyHp <= 0) {
-            sound.playVictory();
-            setStatusEffects({ poisonTurns: 0, burnTurns: 0 }); // Cleanse on victory
-
-            const xpGained = currentEnemy.expReward || 35;
-            const goldGained = currentEnemy.gold || 20;
-
-            const nextXp = player.xp + xpGained;
-            const nextGold = player.gold + goldGained;
-            const nextWins = player.wins + 1;
-            let nextLevel = player.level;
-            let nextMaxHp = player.maxHp;
-            let nextHp = updatedPlayerHp;
-            let nextMaxMana = player.maxMana;
-            let nextMana = result.playerMana;
-            const didLevelUp = nextXp >= nextLevel * 100;
-
-            if (didLevelUp) {
-              nextLevel += 1;
-              nextMaxHp += 20;
-              nextHp = nextMaxHp;
-              nextMaxMana += 10;
-              nextMana = nextMaxMana;
-              addLog(`⭐ LEVEL UP! ${player.name} is now Level ${nextLevel}! Stats enhanced.`, 'heal');
+          setPlayer((p) => {
+            const nextHp = Math.max(0, p.hp - result.damageTaken);
+            if (nextHp <= 0) {
+              sound.playDefeat();
+              addLog('💀 You succumbed to wounds! Reviving at Oakhaven Hamlet campfire...', 'defeat');
+              return {
+                ...p,
+                hp: p.maxHp,
+                mana: p.maxMana,
+                x: 18,
+                y: 19,
+                deaths: p.deaths + 1,
+              };
             }
+            return { ...p, hp: nextHp };
+          });
+        }, 200);
+      }
+    },
+    [targetEnemy, spawnFloatingText, addLog, saveState]
+  );
 
-            // Trigger reward preview floating animation inside log window
-            setRewardPreview({
-              id: Math.random().toString(36).substring(2, 9),
-              gold: goldGained,
-              xp: xpGained,
-              monsterName: currentEnemy.name,
-              isLevelUp: didLevelUp,
-              newLevel: didLevelUp ? nextLevel : undefined,
-            });
+  // 7. Open World Mob AI & Patrol Loop
+  useEffect(() => {
+    const aiInterval = setInterval(() => {
+      const cur = playerRef.current;
+      setMobs((prev) =>
+        prev.map((mob) => {
+          if (mob.hp <= 0) return mob;
 
-            setTimeout(() => {
-              setRewardPreview(null);
-            }, 2600);
+          // Distance to local player
+          const distToPlayer = Math.hypot(mob.x - (cur.x ?? 18), mob.y - (cur.y ?? 19));
 
-            addLog(
-              `🏆 Defeated ${currentEnemy.name}! Gained +${goldGained} Gold and +${xpGained} XP.`,
-              'victory'
-            );
+          // If within aggro radius, chase player!
+          if (distToPlayer <= mob.aggroRadius) {
+            const angle = Math.atan2((cur.y ?? 19) - mob.y, (cur.x ?? 18) - mob.x);
+            const step = 0.12 * mob.speed;
+            const newX = mob.x + Math.cos(angle) * step;
+            const newY = mob.y + Math.sin(angle) * step;
 
-            const updatedPlayer = {
-              ...player,
-              hp: nextHp,
-              maxHp: nextMaxHp,
-              mana: nextMana,
-              maxMana: nextMaxMana,
-              gold: nextGold,
-              xp: nextXp,
-              level: nextLevel,
-              wins: nextWins,
+            return {
+              ...mob,
+              state: 'chase',
+              x: newX,
+              y: newY,
+              targetPlayerId: 'local_player',
             };
-
-            setPlayer(updatedPlayer);
-            saveGame(updatedPlayer);
-            fetchCppTelemetry();
-
-            setTimeout(() => {
-              spawnNewEnemy();
-              setIsActing(false);
-            }, 1200);
-            return;
           }
 
-          // Retaliation and Status Damage processing
-          setTimeout(() => {
-            if (result.damageTaken > 0) {
-              sound.playEnemyHit();
-              spawnFloatingText(`-${result.damageTaken}`, 'player', 'damage');
-              addLog(`${currentEnemy.name} retaliates for ${result.damageTaken} DMG!`, 'enemy_atk');
-            }
+          // Otherwise, gentle patrol around spawn point
+          if (Math.random() < 0.2) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Math.random() * mob.patrolRadius;
+            const targetX = mob.startX + Math.cos(angle) * dist;
+            const targetY = mob.startY + Math.sin(angle) * dist;
+            return {
+              ...mob,
+              state: 'patrol',
+              patrolTargetX: targetX,
+              patrolTargetY: targetY,
+            };
+          }
 
-            // Process Poison & Burn damage tick
-            setStatusEffects((prev) => {
-              let nextHp = updatedPlayerHp;
-              let newPoison = prev.poisonTurns;
-              let newBurn = prev.burnTurns;
+          // Move towards patrol target
+          const angle = Math.atan2(mob.patrolTargetY - mob.y, mob.patrolTargetX - mob.x);
+          const step = 0.04;
+          return {
+            ...mob,
+            x: mob.x + Math.cos(angle) * step,
+            y: mob.y + Math.sin(angle) * step,
+          };
+        })
+      );
+    }, 150);
 
-              if (newPoison > 0) {
-                const poisonDmg = 6;
-                nextHp = Math.max(0, nextHp - poisonDmg);
-                spawnFloatingText(`-${poisonDmg} POISON`, 'player', 'poison');
-                addLog(`🤢 Poison ticks for -${poisonDmg} HP! (${newPoison - 1} turns left)`, 'poison');
-                newPoison -= 1;
-              }
-
-              if (newBurn > 0) {
-                const burnDmg = 7;
-                nextHp = Math.max(0, nextHp - burnDmg);
-                spawnFloatingText(`-${burnDmg} BURN`, 'player', 'damage');
-                addLog(`🔥 Burn ticks for -${burnDmg} HP! (${newBurn - 1} turns left)`, 'burn');
-                newBurn -= 1;
-              }
-
-              if (nextHp !== updatedPlayerHp) {
-                setPlayer((p) => ({ ...p, hp: nextHp }));
-              }
-
-              // Check if hero succumbed
-              if (nextHp <= 0) {
-                sound.playDefeat();
-                addLog('💀 You succumbed to wounds and status toxins! Reviving at campfire...', 'defeat');
-                const defeatPlayer = {
-                  ...player,
-                  hp: player.maxHp,
-                  mana: player.maxMana,
-                  deaths: player.deaths + 1,
-                  gold: Math.max(0, player.gold - 10),
-                };
-                setPlayer(defeatPlayer);
-                saveGame(defeatPlayer);
-
-                setTimeout(() => {
-                  spawnNewEnemy();
-                  setIsActing(false);
-                }, 1500);
-              } else {
-                setIsActing(false);
-              }
-
-              return { poisonTurns: newPoison, burnTurns: newBurn };
-            });
-          }, 450);
-        }
-      } catch (err: any) {
-        addLog(`Network combat error: ${err.message}`, 'info');
-        setIsActing(false);
-      }
-    },
-    [isActing, currentEnemy, player, spawnFloatingText, addLog, saveGame, fetchCppTelemetry, spawnNewEnemy]
-  );
-
-  // Campfire Rest
-  const handleFlee = useCallback(() => {
-    sound.playPotion();
-    setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
-    setPlayer((prev) => ({
-      ...prev,
-      hp: prev.maxHp,
-      mana: prev.maxMana,
-    }));
-    addLog('Rested at the sacred campfire. HP, Mana, and status ailments fully restored.', 'heal');
-    spawnFloatingText('RESTED', 'player', 'heal');
-    spawnNewEnemy();
-  }, [addLog, spawnFloatingText, spawnNewEnemy]);
-
-  // Character Created Handler
-  const handleCharacterCreated = useCallback(
-    (newPlayer: Player) => {
-      setPlayer(newPlayer);
-      setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
-      setIsCharacterCreationOpen(false);
-      setScreen('PLAYING');
-      addLog(`Forged new hero profile: ${newPlayer.name} (${newPlayer.class}) persisted in SQLite.`, 'db_save');
-      spawnNewEnemy();
-    },
-    [addLog, spawnNewEnemy]
-  );
-
-  // Use inventory item
-  const handleUseItem = useCallback(
-    (item: InventoryItem) => {
-      if (item.type === 'potion') {
-        setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
-        setPlayer((prev) => ({
-          ...prev,
-          hp: Math.min(prev.maxHp, prev.hp + item.power),
-        }));
-        spawnFloatingText(`+${item.power} HP`, 'player', 'heal');
-        addLog(`Drank ${item.name}! Restored ${item.power} HP and cured all status ailments.`, 'heal');
-      }
-    },
-    [spawnFloatingText, addLog]
-  );
-
-  // Toggle Mute
-  const handleToggleMute = useCallback(() => {
-    sound.muted = !sound.muted;
-    setIsMuted(sound.muted);
+    return () => clearInterval(aiInterval);
   }, []);
 
-  // Global Keyboard shortcuts
+  // 8. Status Ailments Ticking (Poison & Burn)
+  useEffect(() => {
+    const statusInterval = setInterval(() => {
+      setStatusEffects((prev) => {
+        if (prev.poisonTurns === 0 && prev.burnTurns === 0) return prev;
+
+        const cur = playerRef.current;
+        let damage = 0;
+        let newPoison = prev.poisonTurns;
+        let newBurn = prev.burnTurns;
+
+        if (newPoison > 0) {
+          damage += 6;
+          spawnFloatingText('-6 POISON', cur.x, cur.y, 'poison');
+          addLog(`🤢 Poison ticks for 6 DMG! (${newPoison - 1} turns remaining)`, 'poison');
+          newPoison -= 1;
+        }
+
+        if (newBurn > 0) {
+          damage += 7;
+          spawnFloatingText('-7 BURN', cur.x, cur.y, 'damage');
+          addLog(`🔥 Burn ticks for 7 DMG! (${newBurn - 1} turns remaining)`, 'burn');
+          newBurn -= 1;
+        }
+
+        if (damage > 0) {
+          setPlayer((p) => {
+            const nextHp = Math.max(0, p.hp - damage);
+            if (nextHp <= 0) {
+              sound.playDefeat();
+              addLog('💀 Succumbed to poison and burn! Reviving at Oakhaven Hamlet...', 'defeat');
+              return {
+                ...p,
+                hp: p.maxHp,
+                mana: p.maxMana,
+                x: 18,
+                y: 19,
+                deaths: p.deaths + 1,
+              };
+            }
+            return { ...p, hp: nextHp };
+          });
+        }
+
+        return { poisonTurns: newPoison, burnTurns: newBurn };
+      });
+    }, 3000);
+
+    return () => clearInterval(statusInterval);
+  }, [spawnFloatingText, addLog]);
+
+  // 9. Object Interaction (Chests, NPCs, Campfires, Fountains)
+  const handleInteractObject = useCallback(
+    (obj: WorldObject) => {
+      sound.playClick();
+
+      if (obj.type === 'chest') {
+        if (obj.opened) {
+          addLog(`${obj.name} is already opened and emptied.`, 'info');
+          return;
+        }
+        sound.playVictory();
+        const gold = obj.loot?.gold || 50;
+        setObjects((prev) =>
+          prev.map((o) => (o.id === obj.id ? { ...o, opened: true } : o))
+        );
+        setPlayer((p) => {
+          const updated = { ...p, gold: p.gold + gold };
+          saveState(updated);
+          return updated;
+        });
+        spawnFloatingText(`+${gold} Gold`, obj.x, obj.y, 'gold');
+        addLog(`Unlocked ${obj.name}! Discovered +${gold} Gold & Ancient Artifacts!`, 'victory');
+        return;
+      }
+
+      if (obj.type === 'campfire') {
+        sound.playPotion();
+        setPlayer((p) => {
+          const updated = { ...p, hp: p.maxHp, mana: p.maxMana };
+          saveState(updated);
+          return updated;
+        });
+        setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
+        spawnFloatingText('RESTED & SAVED', obj.x, obj.y, 'heal');
+        addLog('Rested by the Sacred Campfire. Full vitality restored and progress saved!', 'heal');
+        return;
+      }
+
+      if (obj.type === 'fountain') {
+        sound.playPotion();
+        setPlayer((p) => {
+          const updated = { ...p, hp: p.maxHp, mana: p.maxMana };
+          saveState(updated);
+          return updated;
+        });
+        setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
+        spawnFloatingText('PURIFIED', obj.x, obj.y, 'heal');
+        addLog('Drank from enchanted fountain. All status ailments purged!', 'heal');
+        return;
+      }
+
+      // NPC / Shrine dialog modal
+      setActiveNpcObject(obj);
+    },
+    [spawnFloatingText, addLog, saveState]
+  );
+
+  // Check nearby object for HUD interaction prompt
+  const nearbyObject = objects.find(
+    (obj) => Math.hypot(obj.x - (player.x ?? 18), obj.y - (player.y ?? 19)) < 1.8
+  ) || null;
+
+  // Target cycle for controller / keyboard Tab
+  const handleCycleTargetEnemy = useCallback(() => {
+    const cur = playerRef.current;
+    const activeMobs = mobsRef.current
+      .filter((m) => m.hp > 0)
+      .map((m) => ({ mob: m, dist: Math.hypot(m.x - (cur.x ?? 18), m.y - (cur.y ?? 19)) }))
+      .filter((m) => m.dist < 18)
+      .sort((a, b) => a.dist - b.dist);
+
+    if (activeMobs.length === 0) return;
+    const currentIndex = activeMobs.findIndex((m) => m.mob.instanceId === targetEnemy?.instanceId);
+    const nextIndex = (currentIndex + 1) % activeMobs.length;
+    setTargetEnemy(activeMobs[nextIndex].mob);
+    sound.playClick();
+  }, [targetEnemy]);
+
+  // Xbox Gamepad and standard controller integration
+  const { gamepadState, triggerRumble } = useGamepad({
+    enabled: screen === 'PLAYING',
+    onMove: movePlayer,
+    onAction: handleCombatAction,
+    onInteract: () => {
+      if (nearbyObject) handleInteractObject(nearbyObject);
+    },
+    onCycleTarget: handleCycleTargetEnemy,
+    onToggleInventory: () => setIsInventoryOpen((prev) => !prev),
+    onToggleTech: () => setIsTechModalOpen((prev) => !prev),
+  });
+
+  useEffect(() => {
+    triggerRumbleRef.current = triggerRumble;
+  }, [triggerRumble]);
+
+  // Keyboard Event Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -494,60 +770,197 @@ export default function App() {
         return;
       }
 
-      if (e.key === 'c' || e.key === 'C') {
-        setIsCharacterCreationOpen(true);
+      // Tab cycles targets
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        handleCycleTargetEnemy();
+        return;
       }
 
-      if (screen === 'PLAYING') {
-        if (e.key === '1') handleCombatAction('attack');
-        else if (e.key === '2') handleCombatAction('fireball');
-        else if (e.key === '3') handleCombatAction('thunder');
-        else if (e.key === '4') handleCombatAction('potion');
-        else if (e.key === 's' || e.key === 'S') saveGame();
-        else if (e.key === 'f' || e.key === 'F') handleFlee();
-        else if (e.key === 't' || e.key === 'T') setIsTechModalOpen((prev) => !prev);
-        else if (e.key === 'b' || e.key === 'B') setIsInventoryOpen((prev) => !prev);
+      // Movement
+      if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
+        movePlayer(0, -0.4, 'up');
+      } else if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') {
+        movePlayer(0, 0.4, 'down');
+      } else if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
+        movePlayer(-0.4, 0, 'left');
+      } else if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') {
+        movePlayer(0.4, 0, 'right');
+      }
+
+      // Combat Hotkeys
+      else if (e.key === '1') handleCombatAction('attack');
+      else if (e.key === '2') handleCombatAction('fireball');
+      else if (e.key === '3') handleCombatAction('thunder');
+      else if (e.key === '4') handleCombatAction('potion');
+
+      // Interacting with nearby object
+      else if (e.key === 'e' || e.key === 'E' || e.key === ' ') {
+        if (nearbyObject) handleInteractObject(nearbyObject);
+      }
+
+      // Modals
+      else if (e.key === 'c' || e.key === 'C') setIsCharacterCreationOpen(true);
+      else if (e.key === 'b' || e.key === 'B') setIsInventoryOpen(true);
+      else if (e.key === 't' || e.key === 'T') setIsTechModalOpen(true);
+      else if (e.key === 'm' || e.key === 'M') setIsMultiplayerModalOpen(true);
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        setPlayer((p) => ({ ...p, isMoving: false }));
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [screen, handleCombatAction, saveGame, handleFlee]);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [movePlayer, handleCombatAction, nearbyObject, handleInteractObject]);
+
+  // Chat message submission
+  const handleSendChat = (text: string) => {
+    lanMultiplayer.sendChatMessage(player.name, text);
+    addLog(text, 'chat', `${player.name} (You)`);
+  };
+
+  // Join or Host LAN Room
+  const handleJoinRoom = (newRoomCode: string, asHost: boolean) => {
+    setRoomCode(newRoomCode);
+    setIsHost(asHost);
+    lanMultiplayer.connect(newRoomCode, asHost);
+    addLog(`Switched LAN session to room [${newRoomCode}].`, 'multiplayer');
+  };
+
+  // Audio Toggle
+  const handleToggleMute = () => {
+    sound.muted = !sound.muted;
+    setIsMuted(sound.muted);
+  };
+
+  // Character Created Handler
+  const handleCharacterCreated = (newHero: Player) => {
+    setPlayer(newHero);
+    playerRef.current = newHero;
+    saveState(newHero);
+    setIsCharacterCreationOpen(false);
+    setScreen('PLAYING');
+    addLog(`Hero ${newHero.name} forged! Welcome to Oakhaven Hamlet.`, 'heal');
+  };
+
+  // Merchant Buy Handler
+  const handleBuyItem = (item: InventoryItem, cost: number) => {
+    if (player.gold < cost) return;
+    sound.playPotion();
+    const updatedGold = player.gold - cost;
+    const inv = loadSavedInventory();
+    const existing = inv.find((i) => i.itemId === item.itemId);
+    let updatedInv: InventoryItem[];
+    if (existing) {
+      updatedInv = inv.map((i) =>
+        i.itemId === item.itemId ? { ...i, quantity: i.quantity + item.quantity } : i
+      );
+    } else {
+      updatedInv = [...inv, item];
+    }
+
+    saveInventoryToStorage(updatedInv);
+    setPlayer((p) => {
+      const updated = { ...p, gold: updatedGold };
+      saveState(updated);
+      return updated;
+    });
+
+    spawnFloatingText(`-${cost}g`, player.x, player.y, 'gold');
+    addLog(`Acquired ${item.name} for ${cost} Gold.`, 'info');
+  };
 
   return (
-    <div className="w-full min-h-screen bg-slate-950 font-mono">
+    <div className="w-full h-screen overflow-hidden bg-slate-950 font-mono select-none">
       {screen === 'TITLE' ? (
         <TitleScreen
           onStart={() => setScreen('PLAYING')}
           player={player}
           onOpenCharacterCreation={() => setIsCharacterCreationOpen(true)}
           onOpenTechModal={() => setIsTechModalOpen(true)}
+          onOpenMultiplayer={() => setIsMultiplayerModalOpen(true)}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
         />
       ) : (
-        <BattleArena
-          player={player}
-          enemy={currentEnemy}
-          logs={logs}
-          floatingTexts={floatingTexts}
-          statusEffects={statusEffects}
-          rewardPreview={rewardPreview}
-          isActing={isActing}
-          cppStats={cppStats}
-          onAction={handleCombatAction}
-          onSave={() => saveGame()}
-          onFlee={handleFlee}
-          onOpenInventory={() => setIsInventoryOpen(true)}
-          onOpenCharacterCreation={() => setIsCharacterCreationOpen(true)}
-          onOpenTechModal={() => setIsTechModalOpen(true)}
-          onReturnTitle={() => setScreen('TITLE')}
-          isMuted={isMuted}
-          onToggleMute={handleToggleMute}
-          crtEnabled={crtEnabled}
-          onToggleCrt={() => setCrtEnabled(!crtEnabled)}
-        />
+        <div className="relative w-full h-full overflow-hidden">
+          {/* 2D Canvas Open World Renderer */}
+          <OpenWorldCanvas
+            player={player}
+            mobs={mobs}
+            objects={objects}
+            peers={peers}
+            projectiles={projectiles}
+            lootDrops={lootDrops}
+            floatingTexts={floatingTexts}
+            tiles={worldMap.tiles}
+            onInteractObject={handleInteractObject}
+            onTargetMob={(mob) => setTargetEnemy(mob)}
+            crtEnabled={crtEnabled}
+          />
+
+          {/* Open World HUD & Controls */}
+          <OpenWorldHUD
+            player={player}
+            targetEnemy={targetEnemy}
+            mobs={mobs}
+            objects={objects}
+            logs={logs}
+            statusEffects={statusEffects}
+            rewardPreview={rewardPreview}
+            peers={peers}
+            isHost={isHost}
+            roomCode={roomCode}
+            ping={ping}
+            onAction={handleCombatAction}
+            onOpenMultiplayer={() => setIsMultiplayerModalOpen(true)}
+            onOpenInventory={() => setIsInventoryOpen(true)}
+            onOpenCharacterCreation={() => setIsCharacterCreationOpen(true)}
+            onOpenTechModal={() => setIsTechModalOpen(true)}
+            onToggleMute={handleToggleMute}
+            isMuted={isMuted}
+            crtEnabled={crtEnabled}
+            onToggleCrt={() => setCrtEnabled(!crtEnabled)}
+            onSendChat={handleSendChat}
+            nearbyObject={nearbyObject}
+            onInteract={() => nearbyObject && handleInteractObject(nearbyObject)}
+            onSelectMonster={(mob) => setTargetEnemy(mob)}
+            gamepadConnected={gamepadState.connected}
+            gamepadName={gamepadState.id}
+            touchControlsEnabled={touchControlsEnabled}
+            onToggleTouchControls={() => setTouchControlsEnabled((prev) => !prev)}
+          />
+
+          {/* Android Virtual Touch Controls */}
+          <TouchControls
+            player={player}
+            nearbyObject={nearbyObject}
+            onMove={movePlayer}
+            onAction={handleCombatAction}
+            onInteract={() => nearbyObject && handleInteractObject(nearbyObject)}
+            onToggleInventory={() => setIsInventoryOpen((prev) => !prev)}
+            visible={touchControlsEnabled}
+          />
+        </div>
       )}
+
+      {/* LAN Multiplayer Modal */}
+      <LanMultiplayerModal
+        isOpen={isMultiplayerModalOpen}
+        onClose={() => setIsMultiplayerModalOpen(false)}
+        peers={peers}
+        roomCode={roomCode}
+        isHost={isHost}
+        ping={ping}
+        onJoinRoom={handleJoinRoom}
+      />
 
       {/* Character Creation Modal */}
       <CharacterCreationModal
@@ -557,18 +970,46 @@ export default function App() {
         currentPlayer={player}
       />
 
-      {/* 6-Tech Architecture Console Modal */}
+      {/* Tech & Architecture Inspector Modal */}
       <TechInspectorModal
         isOpen={isTechModalOpen}
         onClose={() => setIsTechModalOpen(false)}
-        onReloadXml={loadMonstersFromXML}
+        onReloadXml={loadBestiaryFromXml}
       />
 
-      {/* SQLite Inventory Modal */}
+      {/* Inventory Knapsack Modal */}
       <InventoryModal
         isOpen={isInventoryOpen}
         onClose={() => setIsInventoryOpen(false)}
-        onUseItem={handleUseItem}
+        onUseItem={(item) => {
+          if (item.type === 'potion') {
+            setPlayer((p) => ({ ...p, hp: Math.min(p.maxHp, p.hp + item.power) }));
+            setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
+            spawnFloatingText(`+${item.power} HP`, player.x, player.y, 'heal');
+            addLog(`Quaffed ${item.name}! Restored +${item.power} HP and purified toxins.`, 'heal');
+          }
+        }}
+      />
+
+      {/* World NPC & Object Interaction Modal */}
+      <WorldNPCModal
+        object={activeNpcObject}
+        player={player}
+        onClose={() => setActiveNpcObject(null)}
+        onRest={() => {
+          setPlayer((p) => ({ ...p, hp: p.maxHp, mana: p.maxMana }));
+          setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
+          saveState();
+          spawnFloatingText('RESTED', player.x, player.y, 'heal');
+          addLog('Rested by the Sacred Campfire. Progress saved to client database.', 'heal');
+        }}
+        onDrinkFountain={() => {
+          setPlayer((p) => ({ ...p, hp: p.maxHp, mana: p.maxMana }));
+          setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
+          spawnFloatingText('PURIFIED', player.x, player.y, 'heal');
+          addLog('Drank from sacred fountain. Full vitality restored!', 'heal');
+        }}
+        onBuyItem={handleBuyItem}
       />
     </div>
   );

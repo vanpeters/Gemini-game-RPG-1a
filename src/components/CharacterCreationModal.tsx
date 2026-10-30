@@ -139,38 +139,32 @@ export const CharacterCreationModal: React.FC<CharacterCreationProps> = ({
         currentArchetype.mana
       }`;
 
-      const res = await fetch('/api/player/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: payload,
-      });
+      const createdPlayer: Player = {
+        id: 1,
+        name: heroName.trim(),
+        class: currentArchetype.className,
+        styleId: currentArchetype.id,
+        sprite: currentArchetype.sprite,
+        level: 1,
+        hp: currentArchetype.hp,
+        maxHp: currentArchetype.hp,
+        mana: currentArchetype.mana,
+        maxMana: currentArchetype.mana,
+        gold: 30,
+        xp: 0,
+        wins: 0,
+        deaths: 0,
+        source: 'Client-Side Database',
+        x: 18,
+        y: 19,
+        direction: 'down',
+        isMoving: false,
+      };
 
-      if (res.ok) {
-        sound.playVictory();
-        const data = await res.json();
-        const createdPlayer: Player = {
-          id: 1,
-          name: data.name,
-          class: data.class,
-          styleId: data.styleId,
-          sprite: data.sprite,
-          level: 1,
-          hp: data.hp,
-          maxHp: data.maxHp,
-          mana: data.mana,
-          maxMana: data.maxMana,
-          gold: 25,
-          xp: 0,
-          wins: 0,
-          deaths: 0,
-          source: 'SQLite (rpg.db Profile)',
-        };
-        onCharacterCreated(createdPlayer);
-      } else {
-        setErrorMessage('Failed to persist hero to SQLite backend.');
-      }
+      sound.playVictory();
+      onCharacterCreated(createdPlayer);
     } catch (err: any) {
-      setErrorMessage('Network error creating character: ' + err.message);
+      setErrorMessage('Error creating character: ' + err.message);
     } finally {
       setIsSubmitting(false);
     }

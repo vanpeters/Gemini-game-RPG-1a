@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Package, Shield, Sparkles, Heart } from 'lucide-react';
 import { InventoryItem } from '../types/rpg';
 import { sound } from '../utils/audio';
+import { loadSavedInventory, saveInventoryToStorage } from '../utils/storage';
 
 interface InventoryModalProps {
   isOpen: boolean;
@@ -15,24 +16,22 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
   onUseItem,
 }) => {
   const [items, setItems] = useState<InventoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
-    fetchInventory();
+    const inv = loadSavedInventory();
+    setItems(inv);
   }, [isOpen]);
 
-  const fetchInventory = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/inventory');
-      if (res.ok) {
-        const data = await res.json();
-        setItems(data);
-      }
-    } catch {}
-    finally {
-      setLoading(false);
+  const handleUse = (item: InventoryItem) => {
+    if (item.type === 'potion') {
+      sound.playPotion();
+      onUseItem(item);
+      const updated = items
+        .map((i) => (i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i))
+        .filter((i) => i.quantity > 0);
+      setItems(updated);
+      saveInventoryToStorage(updated);
     }
   };
 
@@ -44,7 +43,7 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/60">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-amber-400" />
-            <h3 className="text-sm font-bold text-amber-300">SQLite Inventory</h3>
+            <h3 className="text-sm font-bold text-amber-300">Adventurer Knapsack & Gear</h3>
           </div>
           <button
             onClick={() => {
@@ -57,51 +56,53 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
           </button>
         </div>
 
-        <div className="p-4 space-y-2">
+        <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
           {items.map((item) => (
             <div
               key={item.id}
-              className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-950 hover:border-slate-700 transition-colors"
+              className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-950/50 hover:bg-slate-950/80 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded bg-slate-900 border border-slate-800 flex items-center justify-center text-lg">
-                  {item.type === 'weapon' && '⚔️'}
-                  {item.type === 'armor' && '🛡️'}
-                  {item.type === 'potion' && '🧪'}
-                  {item.type === 'relic' && '💎'}
+                <div className="w-10 h-10 rounded border border-slate-700 bg-slate-900 flex items-center justify-center text-xl">
+                  {item.icon || (item.type === 'weapon' ? '⚔️' : item.type === 'armor' ? '🛡️' : '🧪')}
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-200">{item.name}</h4>
-                  <span className="text-[10px] text-slate-400 uppercase">
-                    {item.type} · Power: +{item.power}
-                  </span>
+                  <div className="font-bold text-xs text-amber-200">{item.name}</div>
+                  <div className="text-[10px] text-slate-400">
+                    {item.type === 'weapon' && `+${item.power} Attack Power`}
+                    {item.type === 'armor' && `+${item.power} Defense Mitigation`}
+                    {item.type === 'potion' && `Restores ${item.power} HP & cures poison`}
+                  </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-3">
-                <span className="text-xs text-amber-400 font-bold tabular-nums">
-                  x{item.quantity}
-                </span>
+                <span className="text-xs text-slate-400 font-mono">x{item.quantity}</span>
                 {item.type === 'potion' && (
                   <button
-                    onClick={() => {
-                      sound.playPotion();
-                      onUseItem(item);
-                    }}
-                    className="px-2.5 py-1 rounded bg-emerald-950 border border-emerald-700 hover:bg-emerald-900 text-emerald-300 text-xs font-bold transition-colors cursor-pointer"
+                    onClick={() => handleUse(item)}
+                    className="px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold transition"
                   >
-                    Drink
+                    Quaff
                   </button>
                 )}
               </div>
             </div>
           ))}
 
-          {items.length === 0 && !loading && (
-            <div className="text-center py-6 text-slate-500 text-xs">
-              Your bag is currently empty.
-            </div>
+          {items.length === 0 && (
+            <div className="text-center py-6 text-xs text-slate-500">Your knapsack is empty.</div>
           )}
+        </div>
+
+        <div className="flex justify-between items-center px-5 py-3 border-t border-slate-800 bg-slate-950/60 text-xs text-slate-400">
+          <span>Persisted in Local Database</span>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded transition"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>

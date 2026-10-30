@@ -28,7 +28,12 @@ function appendCppLog(data: string) {
 // Ensure C++ binary is compiled
 function ensureCppBinary(): boolean {
   const binaryPath = path.join(__dirname, 'backend', 'rpg_server');
-  if (fs.existsSync(binaryPath)) return true;
+  if (fs.existsSync(binaryPath)) {
+    try {
+      fs.chmodSync(binaryPath, 0o755);
+    } catch {}
+    return true;
+  }
 
   console.log('[Server] C++ binary not found. Compiling backend/server.cpp...');
   try {
@@ -37,6 +42,7 @@ function ensureCppBinary(): boolean {
       stdio: 'pipe',
       timeout: 30000,
     });
+    fs.chmodSync(binaryPath, 0o755);
     console.log('[Server] C++ binary compiled successfully.');
     return true;
   } catch (err: any) {
@@ -59,29 +65,43 @@ function startCppServer() {
   }
 
   const binaryPath = path.join(__dirname, 'backend', 'rpg_server');
+  try {
+    fs.chmodSync(binaryPath, 0o755);
+  } catch {}
+
   console.log(`[Server] Spawning C++ server on port ${CPP_PORT}...`);
 
-  cppProcess = spawn(binaryPath, [CPP_PORT.toString()], {
-    cwd: __dirname,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  try {
+    cppProcess = spawn(binaryPath, [CPP_PORT.toString()], {
+      cwd: __dirname,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
-  cppProcess.stdout?.on('data', (d) => {
-    const text = d.toString();
-    appendCppLog(text);
-    process.stdout.write(`[C++ Server] ${text}`);
-  });
+    cppProcess.on('error', (err) => {
+      console.error('[Server] C++ process error:', err);
+      appendCppLog(`Process error: ${err.message}`);
+    });
 
-  cppProcess.stderr?.on('data', (d) => {
-    const text = d.toString();
-    appendCppLog(`ERR: ${text}`);
-    process.stderr.write(`[C++ Err] ${text}`);
-  });
+    cppProcess.stdout?.on('data', (d) => {
+      const text = d.toString();
+      appendCppLog(text);
+      process.stdout.write(`[C++ Server] ${text}`);
+    });
 
-  cppProcess.on('exit', (code, signal) => {
-    console.log(`[Server] C++ server exited with code ${code}, signal ${signal}`);
-    appendCppLog(`Process exited (code=${code}, signal=${signal})`);
-  });
+    cppProcess.stderr?.on('data', (d) => {
+      const text = d.toString();
+      appendCppLog(`ERR: ${text}`);
+      process.stderr.write(`[C++ Err] ${text}`);
+    });
+
+    cppProcess.on('exit', (code, signal) => {
+      console.log(`[Server] C++ server exited with code ${code}, signal ${signal}`);
+      appendCppLog(`Process exited (code=${code}, signal=${signal})`);
+    });
+  } catch (err: any) {
+    console.error('[Server] Failed to spawn C++ server:', err.message);
+    appendCppLog(`Failed to spawn: ${err.message}`);
+  }
 }
 
 async function startServer() {
@@ -111,6 +131,7 @@ async function startServer() {
         'g++ -O2 -std=c++17 backend/server.cpp -lsqlite3 -lssl -lcrypto -lpthread -Ibackend -o backend/rpg_server',
         { cwd: __dirname, stdio: 'pipe' }
       ).toString();
+      fs.chmodSync(path.join(__dirname, 'backend', 'rpg_server'), 0o755);
 
       appendCppLog('C++ binary compiled cleanly. Restarting process...');
       startCppServer();
