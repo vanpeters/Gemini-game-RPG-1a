@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import http from 'http';
 import { createServer as createViteServer } from 'vite';
 import { spawn, execSync, ChildProcess } from 'child_process';
 import path from 'path';
@@ -263,11 +264,18 @@ async function startServer() {
     }
   });
 
+  const httpServer = http.createServer(app);
+
   // Mount Vite middleware for dev SPA serving
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: {
+          server: httpServer,
+        },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -279,7 +287,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`⚔️  Ruins of Valdor Game Server listening on http://0.0.0.0:${PORT}`);
   });
 }

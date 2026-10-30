@@ -151,42 +151,21 @@ async function saveGame() {
 
 // 4. Character Creation in Client
 async function promptCharacterCreation() {
-    const defaultName = player.name || "Valen the Brave";
-    const name = window.prompt("Enter your Hero's name:", defaultName);
-    if (!name || !name.trim()) return;
+    // Cycle archetype or prompt using DOM
+    const archetypes = [
+        { name: "Valen the Brave", class: "Rune Knight", sprite: "🛡️", styleId: "knight", hp: 110, mana: 45 },
+        { name: "Aurelia Sunfire", class: "Pyromancer", sprite: "🧙‍♂️", styleId: "mage", hp: 85, mana: 80 },
+        { name: "Kaelen Shadowveil", class: "Shadow Rogue", sprite: "🥷", styleId: "rogue", hp: 92, mana: 50 },
+        { name: "Seraphina Dawn", class: "Sun Templar", sprite: "⚜️", styleId: "paladin", hp: 105, mana: 60 },
+        { name: "Thorne Oakenshield", class: "Storm Ranger", sprite: "🏹", styleId: "ranger", hp: 98, mana: 55 }
+    ];
 
-    const chosenName = name.trim();
-    const styleChoice = window.prompt("Choose visual archetype:\n1. Rune Knight (🛡️)\n2. Pyromancer (🧙‍♂️)\n3. Shadow Rogue (🥷)\n4. Sun Templar (⚜️)\n5. Storm Ranger (🏹)", "1");
-
-    let heroClass = "Rune Knight";
-    let sprite = "🛡️";
-    let styleId = "knight";
-    let hp = 110, mana = 45;
-
-    if (styleChoice === "2") {
-        heroClass = "Pyromancer";
-        sprite = "🧙‍♂️";
-        styleId = "mage";
-        hp = 85; mana = 80;
-    } else if (styleChoice === "3") {
-        heroClass = "Shadow Rogue";
-        sprite = "🥷";
-        styleId = "rogue";
-        hp = 92; mana = 50;
-    } else if (styleChoice === "4") {
-        heroClass = "Sun Templar";
-        sprite = "⚜️";
-        styleId = "paladin";
-        hp = 105; mana = 60;
-    } else if (styleChoice === "5") {
-        heroClass = "Storm Ranger";
-        sprite = "🏹";
-        styleId = "ranger";
-        hp = 98; mana = 55;
-    }
+    // Find next archetype to cycle
+    const curIdx = archetypes.findIndex(a => a.styleId === player.styleId);
+    const nextArch = archetypes[(curIdx + 1) % archetypes.length];
 
     try {
-        const payload = `name=${encodeURIComponent(chosenName)}&class=${encodeURIComponent(heroClass)}&styleId=${encodeURIComponent(styleId)}&sprite=${encodeURIComponent(sprite)}&hp=${hp}&maxHp=${hp}&mana=${mana}&maxMana=${mana}`;
+        const payload = `name=${encodeURIComponent(nextArch.name)}&class=${encodeURIComponent(nextArch.class)}&styleId=${encodeURIComponent(nextArch.styleId)}&sprite=${encodeURIComponent(nextArch.sprite)}&hp=${nextArch.hp}&maxHp=${nextArch.hp}&mana=${nextArch.mana}&maxMana=${nextArch.mana}`;
         const res = await fetch(`${API_URL}/player/create`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -194,18 +173,18 @@ async function promptCharacterCreation() {
         });
 
         if (res.ok) {
-            player.name = chosenName;
-            player.heroClass = heroClass;
-            player.styleId = styleId;
-            player.sprite = sprite;
-            player.hp = hp;
-            player.maxHp = hp;
-            player.mana = mana;
-            player.maxMana = mana;
+            player.name = nextArch.name;
+            player.heroClass = nextArch.class;
+            player.styleId = nextArch.styleId;
+            player.sprite = nextArch.sprite;
+            player.hp = nextArch.hp;
+            player.maxHp = nextArch.hp;
+            player.mana = nextArch.mana;
+            player.maxMana = nextArch.mana;
             player.level = 1;
             player.xp = 0;
             statusEffects = { poisonTurns: 0, burnTurns: 0 };
-            log(`✨ Forged hero ${player.name} (${player.heroClass}) - saved to SQLite!`);
+            log(`✨ Switched hero archetype to ${player.name} (${player.heroClass})! Persisted in SQLite.`);
             updateUI();
             spawnEnemy();
         }
@@ -368,18 +347,37 @@ function fallbackCombatAction(action) {
 
 function handleVictory() {
     statusEffects = { poisonTurns: 0, burnTurns: 0 };
-    log(`🏆 <span class="log-crit">VICTORY!</span> Defeated ${currentEnemy.name}! Found <span class="log-gold">+${currentEnemy.gold} Gold</span> and gained +${currentEnemy.expReward || 30} XP.`);
-    player.gold += currentEnemy.gold;
-    player.xp += (currentEnemy.expReward || 30);
+    const goldGained = currentEnemy.gold;
+    const xpGained = currentEnemy.expReward || 30;
+
+    log(`🏆 <span class="log-crit">VICTORY!</span> Defeated ${currentEnemy.name}! Found <span class="log-gold">+${goldGained} Gold</span> and gained +${xpGained} XP.`);
+    player.gold += goldGained;
+    player.xp += xpGained;
     player.wins += 1;
 
+    let didLevelUp = false;
     if (player.xp >= player.level * 100) {
         player.level += 1;
         player.maxHp += 15;
         player.hp = player.maxHp;
         player.maxMana += 10;
         player.mana = player.maxMana;
+        didLevelUp = true;
         log(`🌟 <span class="log-heal">LEVEL UP! Reached Level ${player.level}! Stats increased!</span>`);
+    }
+
+    // Inject animated reward preview inside combat-log window
+    const box = document.getElementById("combat-log");
+    if (box) {
+        const rewardEl = document.createElement("div");
+        rewardEl.className = "reward-preview-banner";
+        rewardEl.innerHTML = `
+            <span class="reward-gold">💰 +${goldGained} Gold</span>
+            <span class="reward-xp">⭐ +${xpGained} XP</span>
+            ${didLevelUp ? `<span class="reward-levelup">LEVEL UP! Lv.${player.level}</span>` : ''}
+        `;
+        box.prepend(rewardEl);
+        setTimeout(() => rewardEl.remove(), 2600);
     }
 
     updateUI();

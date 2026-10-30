@@ -18,7 +18,7 @@ import {
   ChevronRight,
   User,
 } from 'lucide-react';
-import { Player, Monster, CombatLogEntry, FloatingText, CppTelemetry, StatusEffects } from '../types/rpg';
+import { Player, Monster, CombatLogEntry, FloatingText, CppTelemetry, StatusEffects, RewardPreview } from '../types/rpg';
 import { sound } from '../utils/audio';
 
 interface BattleArenaProps {
@@ -27,6 +27,7 @@ interface BattleArenaProps {
   logs: CombatLogEntry[];
   floatingTexts: FloatingText[];
   statusEffects: StatusEffects;
+  rewardPreview: RewardPreview | null;
   isActing: boolean;
   cppStats: CppTelemetry | null;
   onAction: (action: 'attack' | 'fireball' | 'thunder' | 'potion') => void;
@@ -48,6 +49,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   logs,
   floatingTexts,
   statusEffects,
+  rewardPreview,
   isActing,
   cppStats,
   onAction,
@@ -409,7 +411,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         </div>
 
         {/* COMBAT LOG */}
-        <div className="rounded-lg border border-slate-800 bg-slate-950/90 backdrop-blur-md p-3 mb-4 shadow-inner">
+        <div className="relative rounded-lg border border-slate-800 bg-slate-950/90 backdrop-blur-md p-3 mb-4 shadow-inner overflow-hidden">
           <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800/80 pb-1.5 mb-2">
             <span className="flex items-center gap-1.5 text-slate-300">
               <Swords className="w-3.5 h-3.5 text-amber-400" />
@@ -419,6 +421,38 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               Logged events: {logs.length}
             </span>
           </div>
+
+          {/* Reward Preview Animation inside Log Window */}
+          {rewardPreview && (
+            <div
+              key={rewardPreview.id}
+              className="absolute top-2 right-2.5 z-30 pointer-events-none flex items-center gap-2 animate-reward-float"
+            >
+              <div className="px-3 py-1.5 rounded border border-yellow-500/80 bg-slate-950/95 shadow-[0_0_20px_rgba(234,179,8,0.45)] backdrop-blur-md flex items-center gap-3 font-mono">
+                {/* Floating Gold Gain */}
+                <div className="flex items-center gap-1 text-xs font-bold text-yellow-300 text-glow-gold">
+                  <Coins className="w-3.5 h-3.5 text-yellow-400 animate-bounce" />
+                  <span>+{rewardPreview.gold} Gold</span>
+                </div>
+
+                <span className="text-slate-600 font-bold">·</span>
+
+                {/* Floating XP Gain */}
+                <div className="flex items-center gap-1 text-xs font-bold text-emerald-300 text-glow-emerald">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                  <span>+{rewardPreview.xp} XP</span>
+                </div>
+
+                {/* Level Up Badge if triggered */}
+                {rewardPreview.isLevelUp && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 font-extrabold text-[10px] uppercase tracking-wider animate-levelup-burst shadow-sm">
+                    <Trophy className="w-3 h-3 text-slate-950" />
+                    <span>LEVEL UP! Lv.{rewardPreview.newLevel}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div
             ref={logContainerRef}

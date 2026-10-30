@@ -120,4 +120,13 @@ export interface StatusEffects {
   burnTurns: number;
 }
 
+export interface RewardPreview {
+  id: string;
+  gold: number;
+  xp: number;
+  monsterName: string;
+  isLevelUp: boolean;
+  newLevel?: number;
+}
+
 export type GameScreen = 'TITLE' | 'CHARACTER_CREATION' | 'PLAYING' | 'PAUSED' | 'VICTORY_SCREEN' | 'DEFEAT_SCREEN';

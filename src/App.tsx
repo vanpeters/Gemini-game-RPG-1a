@@ -24,6 +24,7 @@ import {
   GameScreen,
   InventoryItem,
   StatusEffects,
+  RewardPreview,
 } from './types/rpg';
 import { parseBestiaryXML } from './utils/xmlParser';
 import { sound } from './utils/audio';
@@ -56,6 +57,7 @@ export default function App() {
     poisonTurns: 0,
     burnTurns: 0,
   });
+  const [rewardPreview, setRewardPreview] = useState<RewardPreview | null>(null);
   const [isActing, setIsActing] = useState(false);
   const [cppStats, setCppStats] = useState<CppTelemetry | null>(null);
 
@@ -312,8 +314,9 @@ export default function App() {
             let nextHp = updatedPlayerHp;
             let nextMaxMana = player.maxMana;
             let nextMana = result.playerMana;
+            const didLevelUp = nextXp >= nextLevel * 100;
 
-            if (nextXp >= nextLevel * 100) {
+            if (didLevelUp) {
               nextLevel += 1;
               nextMaxHp += 20;
               nextHp = nextMaxHp;
@@ -321,6 +324,20 @@ export default function App() {
               nextMana = nextMaxMana;
               addLog(`⭐ LEVEL UP! ${player.name} is now Level ${nextLevel}! Stats enhanced.`, 'heal');
             }
+
+            // Trigger reward preview floating animation inside log window
+            setRewardPreview({
+              id: Math.random().toString(36).substring(2, 9),
+              gold: goldGained,
+              xp: xpGained,
+              monsterName: currentEnemy.name,
+              isLevelUp: didLevelUp,
+              newLevel: didLevelUp ? nextLevel : undefined,
+            });
+
+            setTimeout(() => {
+              setRewardPreview(null);
+            }, 2600);
 
             addLog(
               `🏆 Defeated ${currentEnemy.name}! Gained +${goldGained} Gold and +${xpGained} XP.`,
@@ -515,6 +532,7 @@ export default function App() {
           logs={logs}
           floatingTexts={floatingTexts}
           statusEffects={statusEffects}
+          rewardPreview={rewardPreview}
           isActing={isActing}
           cppStats={cppStats}
           onAction={handleCombatAction}

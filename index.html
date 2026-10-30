@@ -3,12 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
-    <meta name="description" content="An application built with Google AI Studio." />
-    <meta property="og:title" content="My Google AI Studio App" />
-    <meta property="og:description" content="An application built with Google AI Studio." />
+    <title>Ruins of Valdor RPG</title>
+    <meta name="description" content="Full-stack Web RPG featuring HTML/CSS pixel HUD, JavaScript game loop, XML bestiary configuration, SQLite persistent database, and a C++ REST backend for combat calculation and state validation." />
+    <meta property="og:title" content="Ruins of Valdor RPG" />
+    <meta property="og:description" content="Full-stack Web RPG featuring HTML/CSS pixel HUD, JavaScript game loop, XML bestiary configuration, SQLite persistent database, and a C++ REST backend for combat calculation and state validation." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Ignore HMR WebSocket errors in sandboxed preview iframe per environment constraints
+      window.addEventListener('unhandledrejection', function (e) {
+        var reason = e.reason;
+        var msg = reason ? (reason.message || String(reason)) : '';
+        var stack = reason ? (reason.stack || '') : '';
+        if (
+          msg.includes('WebSocket') ||
+          msg.includes('createWebSocketModuleRunnerTransport') ||
+          stack.includes('@vite/client')
+        ) {
+          e.preventDefault();
+        }
+      });
+      window.addEventListener('error', function (e) {
+        var msg = e.message || '';
+        var filename = e.filename || '';
+        if (msg.includes('WebSocket') || filename.includes('@vite/client')) {
+          e.preventDefault();
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
