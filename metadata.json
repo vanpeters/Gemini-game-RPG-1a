@@ -1,0 +1,6 @@
+{
+  "name": "Ruins of Valdor RPG",
+  "description": "Full-stack Web RPG featuring HTML/CSS pixel HUD, JavaScript game loop, XML bestiary configuration, SQLite persistent database, and a C++ REST backend for combat calculation and state validation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ruins of Valdor RPG</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <!-- Hero HUD -->
+        <header class="hud">
+            <div>
+                <div class="hero-title-row">
+                    <h2 id="player-name">Valen the Brave</h2>
+                    <span id="player-class-badge" class="badge">Rune Knight</span>
+                </div>
+                <div class="bar-label">HP</div>
+                <div class="bar-container">
+                    <div id="player-hp-bar" class="bar hp" style="width: 100%;"></div>
+                </div>
+                <span id="player-hp-text">100 / 100</span>
+
+                <div class="bar-label mana-label">MANA</div>
+                <div class="bar-container mana-container">
+                    <div id="player-mana-bar" class="bar mana" style="width: 100%;"></div>
+                </div>
+                <span id="player-mana-text">50 / 50</span>
+            </div>
+            <div class="status-column">
+                <div class="gold-counter">💰 <span id="player-gold">25</span> Gold</div>
+                <div class="level-counter">⭐ Lvl <span id="player-level">1</span> (<span id="player-xp">0</span> XP)</div>
+                <div class="record-counter">⚔️ <span id="player-wins">0</span> Wins · 💀 <span id="player-deaths">0</span> Deaths</div>
+            </div>
+        </header>
+
+        <!-- Arena Area -->
+        <main class="arena">
+            <div class="card monster-card">
+                <div class="enemy-meta">
+                    <span id="monster-element" class="element-tag">Earth</span>
+                    <span id="monster-weakness" class="weakness-tag">Weak: Fire</span>
+                </div>
+                <div id="monster-sprite" class="sprite">👺</div>
+                <h3 id="monster-name">Cave Goblin</h3>
+                <div class="bar-container">
+                    <div id="monster-hp-bar" class="bar hp enemy" style="width: 100%;"></div>
+                </div>
+                <span id="monster-hp-text">45 / 45</span>
+                <p id="monster-lore" class="monster-lore">Vicious scavengers lurking in the sunken crypts of ancient Valdor.</p>
+            </div>
+        </main>
+
+        <!-- Combat Log -->
+        <div id="combat-log" class="log-window"></div>
+
+        <!-- Controls -->
+        <footer class="controls">
+            <button id="btn-attack" class="btn">⚔️ Attack</button>
+            <button id="btn-spell" class="btn magic">✨ Fireball (15 MP)</button>
+            <button id="btn-thunder" class="btn thunder">⚡ Lightning (25 MP)</button>
+            <button id="btn-heal" class="btn heal">🧪 Potion (+35 HP)</button>
+            <button id="btn-save" class="btn save">💾 Save DB (C++ / SQLite)</button>
+        </footer>
+
+        <!-- Technology Status Bar -->
+        <div class="tech-bar">
+            <span>⚙️ C++ REST Server: <b id="cpp-status-indicator">Checking...</b></span>
+            <span>📜 XML: <b id="xml-status-indicator">enemies.xml (DOMParser)</b></span>
+            <span>🗄️ DB: <b>SQLite3 (rpg.db)</b></span>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>

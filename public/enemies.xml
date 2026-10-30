@@ -1,0 +1,500 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bestiary version="2.0" realm="Ruins of Valdor" totalMonsters="38">
+    <!-- Original Bestiary -->
+    <monster id="goblin">
+        <name>Cave Goblin</name>
+        <maxHp>45</maxHp>
+        <attackPower>10</attackPower>
+        <goldReward>15</goldReward>
+        <sprite>👺</sprite>
+        <element>Earth</element>
+        <weakness>Fire</weakness>
+        <specialMove>Rusty Shiv</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>20</expReward>
+        <lore>Vicious scavengers lurking in the sunken crypts of ancient Valdor.</lore>
+    </monster>
+    <monster id="skeleton">
+        <name>Skeleton Knight</name>
+        <maxHp>75</maxHp>
+        <attackPower>16</attackPower>
+        <goldReward>30</goldReward>
+        <sprite>💀</sprite>
+        <element>Undead</element>
+        <weakness>Holy</weakness>
+        <specialMove>Shield Bash</specialMove>
+        <specialAbility>defensive_stance</specialAbility>
+        <expReward>45</expReward>
+        <lore>Fallen paladins reanimated by residual necromancy within the fortress.</lore>
+    </monster>
+    <monster id="orc_berserker">
+        <name>Orc Berserker</name>
+        <maxHp>110</maxHp>
+        <attackPower>22</attackPower>
+        <goldReward>55</goldReward>
+        <sprite>👹</sprite>
+        <element>Physical</element>
+        <weakness>Lightning</weakness>
+        <specialMove>Frenzied Cleave</specialMove>
+        <specialAbility>berserk</specialAbility>
+        <expReward>80</expReward>
+        <lore>A relentless brute whose rage intensifies when wounded below half health.</lore>
+    </monster>
+    <monster id="lich">
+        <name>Abyssal Lich</name>
+        <maxHp>130</maxHp>
+        <attackPower>24</attackPower>
+        <goldReward>80</goldReward>
+        <sprite>🧙‍♂️</sprite>
+        <element>Shadow</element>
+        <weakness>Fire</weakness>
+        <specialMove>Soul Siphon</specialMove>
+        <specialAbility>life_drain</specialAbility>
+        <expReward>120</expReward>
+        <lore>An ancient wizard who bound his essence to the corrupted ley-lines.</lore>
+    </monster>
+    <monster id="dragon">
+        <name>Nether Dragon</name>
+        <maxHp>180</maxHp>
+        <attackPower>30</attackPower>
+        <goldReward>120</goldReward>
+        <sprite>🐉</sprite>
+        <element>Fire</element>
+        <weakness>Frost</weakness>
+        <specialMove>Cataclysmic Breath</specialMove>
+        <specialAbility>burn</specialAbility>
+        <expReward>200</expReward>
+        <lore>The colossal beast slumbering at the sanctum core of the ruined kingdom.</lore>
+    </monster>
+
+    <!-- 33 New Bestiary Additions with Poison, Defensive Stance, Life Drain & Elemental Abilities -->
+    <monster id="venom_viper">
+        <name>Venomous Pit Viper</name>
+        <maxHp>40</maxHp>
+        <attackPower>11</attackPower>
+        <goldReward>14</goldReward>
+        <sprite>🐍</sprite>
+        <element>Poison</element>
+        <weakness>Frost</weakness>
+        <specialMove>Toxic Fang</specialMove>
+        <specialAbility>poison</specialAbility>
+        <expReward>22</expReward>
+        <lore>Slithers between loose flagstones; delivers a debilitating venom that corrodes armor.</lore>
+    </monster>
+    <monster id="crypt_scorpion">
+        <name>Crypt Scorpion</name>
+        <maxHp>54</maxHp>
+        <attackPower>13</attackPower>
+        <goldReward>18</goldReward>
+        <sprite>🦂</sprite>
+        <element>Poison</element>
+        <weakness>Fire</weakness>
+        <specialMove>Stinger Injection</specialMove>
+        <specialAbility>poison</specialAbility>
+        <expReward>28</expReward>
+        <lore>Chitinous arachnid with a barbed tail that secretes slow-acting paralyzed venom.</lore>
+    </monster>
+    <monster id="plague_ghoul">
+        <name>Plague Ghoul</name>
+        <maxHp>65</maxHp>
+        <attackPower>14</attackPower>
+        <goldReward>22</goldReward>
+        <sprite>🧟</sprite>
+        <element>Undead</element>
+        <weakness>Holy</weakness>
+        <specialMove>Contagious Bite</specialMove>
+        <specialAbility>poison</specialAbility>
+        <expReward>35</expReward>
+        <lore>Corpse scavenger covered in toxic miasma that infects open wounds upon contact.</lore>
+    </monster>
+    <monster id="toxic_sporeling">
+        <name>Toxic Sporeling</name>
+        <maxHp>36</maxHp>
+        <attackPower>9</attackPower>
+        <goldReward>12</goldReward>
+        <sprite>🍄</sprite>
+        <element>Earth</element>
+        <weakness>Fire</weakness>
+        <specialMove>Spore Cloud</specialMove>
+        <specialAbility>poison</specialAbility>
+        <expReward>18</expReward>
+        <lore>A sentient subterranean fungus emitting green toxic plumes whenever struck.</lore>
+    </monster>
+    <monster id="bog_hag">
+        <name>Sunken Bog Hag</name>
+        <maxHp>78</maxHp>
+        <attackPower>16</attackPower>
+        <goldReward>34</goldReward>
+        <sprite>🧌</sprite>
+        <element>Shadow</element>
+        <weakness>Holy</weakness>
+        <specialMove>Vile Decoction</specialMove>
+        <specialAbility>poison</specialAbility>
+        <expReward>48</expReward>
+        <lore>Wicked sorceress brewing foul concoctions in the flooded sewer vaults.</lore>
+    </monster>
+    <monster id="carrion_crawler">
+        <name>Carrion Crawler</name>
+        <maxHp>62</maxHp>
+        <attackPower>13</attackPower>
+        <goldReward>20</goldReward>
+        <sprite>🐛</sprite>
+        <element>Poison</element>
+        <weakness>Fire</weakness>
+        <specialMove>Noxious Tendril</specialMove>
+        <specialAbility>poison</specialAbility>
+        <expReward>30</expReward>
+        <lore>A multi-legged vermin dragging itself along dungeon ceilings, dripping acid venom.</lore>
+    </monster>
+    <monster id="nightmare_weaver">
+        <name>Nightmare Weaver</name>
+        <maxHp>84</maxHp>
+        <attackPower>18</attackPower>
+        <goldReward>44</goldReward>
+        <sprite>🕷️</sprite>
+        <element>Poison</element>
+        <weakness>Fire</weakness>
+        <specialMove>Venom Web</specialMove>
+        <specialAbility>poison</specialAbility>
+        <expReward>52</expReward>
+        <lore>Giant brooding spider weaving silky tripwires soaked in flesh-rotting secretions.</lore>
+    </monster>
+    <monster id="stone_tortoise">
+        <name>Rune Stone Tortoise</name>
+        <maxHp>95</maxHp>
+        <attackPower>9</attackPower>
+        <goldReward>25</goldReward>
+        <sprite>🐢</sprite>
+        <element>Earth</element>
+        <weakness>Lightning</weakness>
+        <specialMove>Granite Shell</specialMove>
+        <specialAbility>defensive_stance</specialAbility>
+        <expReward>40</expReward>
+        <lore>Carries a carapace of solidified volcanic granite that absorbs the force of mortal strikes.</lore>
+    </monster>
+    <monster id="iron_golem">
+        <name>Iron Fortress Golem</name>
+        <maxHp>140</maxHp>
+        <attackPower>19</attackPower>
+        <goldReward>60</goldReward>
+        <sprite>🗿</sprite>
+        <element>Metal</element>
+        <weakness>Lightning</weakness>
+        <specialMove>Iron Bulwark</specialMove>
+        <specialAbility>defensive_stance</specialAbility>
+        <expReward>85</expReward>
+        <lore>Ancient siege construct that interlocks its heavy iron plates into an impenetrable fortress.</lore>
+    </monster>
+    <monster id="shield_phalanx">
+        <name>Shielded Phalanx Sentinel</name>
+        <maxHp>88</maxHp>
+        <attackPower>14</attackPower>
+        <goldReward>30</goldReward>
+        <sprite>🛡️</sprite>
+        <element>Physical</element>
+        <weakness>Fire</weakness>
+        <specialMove>Testudo Stance</specialMove>
+        <specialAbility>defensive_stance</specialAbility>
+        <expReward>46</expReward>
+        <lore>Skeletal Romanesque legionnaire trained in the ancient defensive maneuvers of Valdor.</lore>
+    </monster>
+    <monster id="armored_beast">
+        <name>Spiked Pangolin Beast</name>
+        <maxHp>72</maxHp>
+        <attackPower>12</attackPower>
+        <goldReward>24</goldReward>
+        <sprite>🦔</sprite>
+        <element>Earth</element>
+        <weakness>Frost</weakness>
+        <specialMove>Curled Aegis</specialMove>
+        <specialAbility>defensive_stance</specialAbility>
+        <expReward>36</expReward>
+        <lore>Curls into an armored spherical barricade, causing blades to glance harmlessly off scales.</lore>
+    </monster>
+    <monster id="obsidian_gargoyle">
+        <name>Obsidian Gargoyle</name>
+        <maxHp>105</maxHp>
+        <attackPower>17</attackPower>
+        <goldReward>42</goldReward>
+        <sprite>🦇</sprite>
+        <element>Dark</element>
+        <weakness>Holy</weakness>
+        <specialMove>Stone Harden</specialMove>
+        <specialAbility>defensive_stance</specialAbility>
+        <expReward>65</expReward>
+        <lore>Perched atop buttresses, it turns its volcanic stone skin rigid when attacked.</lore>
+    </monster>
+    <monster id="gate_sentinel">
+        <name>Valdor Gate Automaton</name>
+        <maxHp>115</maxHp>
+        <attackPower>20</attackPower>
+        <goldReward>58</goldReward>
+        <sprite>⚔️</sprite>
+        <element>Metal</element>
+        <weakness>Lightning</weakness>
+        <specialMove>Aegis Protocol</specialMove>
+        <specialAbility>defensive_stance</specialAbility>
+        <expReward>75</expReward>
+        <lore>Enchanted clockwork soldier guarding the archway to the high sanctuary.</lore>
+    </monster>
+    <monster id="crystal_elemental">
+        <name>Prismatic Crystal Elemental</name>
+        <maxHp>110</maxHp>
+        <attackPower>18</attackPower>
+        <goldReward>62</goldReward>
+        <sprite>💎</sprite>
+        <element>Earth</element>
+        <weakness>Thunder</weakness>
+        <specialMove>Refraction Barrier</specialMove>
+        <specialAbility>defensive_stance</specialAbility>
+        <expReward>70</expReward>
+        <lore>A crystalline entity whose facet edges refract kinetic energy and spell strikes.</lore>
+    </monster>
+    <monster id="rune_cursed_knight">
+        <name>Runic Bastion Knight</name>
+        <maxHp>102</maxHp>
+        <attackPower>21</attackPower>
+        <goldReward>50</goldReward>
+        <sprite>🤺</sprite>
+        <element>Arcane</element>
+        <weakness>Holy</weakness>
+        <specialMove>Glyph Parry</specialMove>
+        <specialAbility>defensive_stance</specialAbility>
+        <expReward>68</expReward>
+        <lore>Bound by royal oath, his runed greatsword deflects even the most cataclysmic impacts.</lore>
+    </monster>
+    <monster id="vampire_bat">
+        <name>Vampiric Lord</name>
+        <maxHp>72</maxHp>
+        <attackPower>16</attackPower>
+        <goldReward>35</goldReward>
+        <sprite>🧛</sprite>
+        <element>Shadow</element>
+        <weakness>Holy</weakness>
+        <specialMove>Blood Feasting</specialMove>
+        <specialAbility>life_drain</specialAbility>
+        <expReward>45</expReward>
+        <lore>Feeds on the living vitality of intrepid dungeon trespassers to repair its undead flesh.</lore>
+    </monster>
+    <monster id="blood_cultist">
+        <name>Sanguine Cultist</name>
+        <maxHp>68</maxHp>
+        <attackPower>15</attackPower>
+        <goldReward>28</goldReward>
+        <sprite>🩸</sprite>
+        <element>Blood</element>
+        <weakness>Holy</weakness>
+        <specialMove>Essence Drain</specialMove>
+        <specialAbility>life_drain</specialAbility>
+        <expReward>40</expReward>
+        <lore>Fanatics in crimson robes who practice forbidden rites to harvest living life essences.</lore>
+    </monster>
+    <monster id="abyssal_devourer">
+        <name>Abyssal Eye Devourer</name>
+        <maxHp>145</maxHp>
+        <attackPower>25</attackPower>
+        <goldReward>95</goldReward>
+        <sprite>👁️</sprite>
+        <element>Dark</element>
+        <weakness>Light</weakness>
+        <specialMove>Soul Gaze</specialMove>
+        <specialAbility>life_drain</specialAbility>
+        <expReward>110</expReward>
+        <lore>Floating cyclopean anomaly that drinks vitality through hypnotic ocular rays.</lore>
+    </monster>
+    <monster id="frost_wraith">
+        <name>Frostbound Wraith</name>
+        <maxHp>82</maxHp>
+        <attackPower>17</attackPower>
+        <goldReward>38</goldReward>
+        <sprite>❄️</sprite>
+        <element>Frost</element>
+        <weakness>Fire</weakness>
+        <specialMove>Glacial Chill</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>50</expReward>
+        <lore>An ethereal apparition trapped in permafrost beneath the northern dungeon hall.</lore>
+    </monster>
+    <monster id="fire_whelp">
+        <name>Flame Drake Whelp</name>
+        <maxHp>58</maxHp>
+        <attackPower>15</attackPower>
+        <goldReward>26</goldReward>
+        <sprite>🦎</sprite>
+        <element>Fire</element>
+        <weakness>Frost</weakness>
+        <specialMove>Molten Spit</specialMove>
+        <specialAbility>burn</specialAbility>
+        <expReward>32</expReward>
+        <lore>Juvenile reptilian beast whose incendiary bile ignites boots and leather tunics.</lore>
+    </monster>
+    <monster id="inferno_hound">
+        <name>Inferno Hellhound</name>
+        <maxHp>88</maxHp>
+        <attackPower>20</attackPower>
+        <goldReward>42</goldReward>
+        <sprite>🐕‍🦺</sprite>
+        <element>Fire</element>
+        <weakness>Frost</weakness>
+        <specialMove>Brimstone Bite</specialMove>
+        <specialAbility>burn</specialAbility>
+        <expReward>55</expReward>
+        <lore>Two-headed infernal canine wreathed in roaring brimstone fire.</lore>
+    </monster>
+    <monster id="cinder_imp">
+        <name>Cinder Imp</name>
+        <maxHp>38</maxHp>
+        <attackPower>11</attackPower>
+        <goldReward>16</goldReward>
+        <sprite>😈</sprite>
+        <element>Fire</element>
+        <weakness>Frost</weakness>
+        <specialMove>Fire Brand</specialMove>
+        <specialAbility>burn</specialAbility>
+        <expReward>20</expReward>
+        <lore>A shrieking winged fiend tossing glowing hot embers into adventurer packs.</lore>
+    </monster>
+    <monster id="goblin_pyro">
+        <name>Goblin Pyromancer</name>
+        <maxHp>50</maxHp>
+        <attackPower>16</attackPower>
+        <goldReward>25</goldReward>
+        <sprite>🧙</sprite>
+        <element>Fire</element>
+        <weakness>Water</weakness>
+        <specialMove>Volatile Flask</specialMove>
+        <specialAbility>burn</specialAbility>
+        <expReward>34</expReward>
+        <lore>Volatile alchemist chucking unstable burning turpentine flasks.</lore>
+    </monster>
+    <monster id="shadow_assassin">
+        <name>Shadowblade Assassin</name>
+        <maxHp>60</maxHp>
+        <attackPower>24</attackPower>
+        <goldReward>46</goldReward>
+        <sprite>🥷</sprite>
+        <element>Shadow</element>
+        <weakness>Light</weakness>
+        <specialMove>Throat Slicer</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>58</expReward>
+        <lore>Leaps from rafters without making a sound; dual-wields serrated obsidian daggers.</lore>
+    </monster>
+    <monster id="mimic">
+        <name>Treasure Mimic</name>
+        <maxHp>95</maxHp>
+        <attackPower>22</attackPower>
+        <goldReward>85</goldReward>
+        <sprite>📦</sprite>
+        <element>Arcane</element>
+        <weakness>Fire</weakness>
+        <specialMove>Surprise Chomp</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>70</expReward>
+        <lore>Disguised as a gilded chest filled with rubies, waiting for greedy fingers.</lore>
+    </monster>
+    <monster id="banshee">
+        <name>Wailing Banshee</name>
+        <maxHp>76</maxHp>
+        <attackPower>18</attackPower>
+        <goldReward>36</goldReward>
+        <sprite>👻</sprite>
+        <element>Undead</element>
+        <weakness>Fire</weakness>
+        <specialMove>Eerie Wail</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>46</expReward>
+        <lore>Her sorrowful death-cry resonates through ancient dungeon hallways.</lore>
+    </monster>
+    <monster id="swamp_hydra">
+        <name>Valdor Sewer Hydra</name>
+        <maxHp>155</maxHp>
+        <attackPower>23</attackPower>
+        <goldReward>92</goldReward>
+        <sprite>🐲</sprite>
+        <element>Water</element>
+        <weakness>Lightning</weakness>
+        <specialMove>Triple Snap</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>100</expReward>
+        <lore>A three-headed swamp horror dwelling in the submerged subterranean aqueducts.</lore>
+    </monster>
+    <monster id="mummy">
+        <name>Royal Crypt Mummy</name>
+        <maxHp>92</maxHp>
+        <attackPower>15</attackPower>
+        <goldReward>36</goldReward>
+        <sprite>🧻</sprite>
+        <element>Earth</element>
+        <weakness>Fire</weakness>
+        <specialMove>Dust of the Pharaoh</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>50</expReward>
+        <lore>Preserved in dried resins and warding parchment; highly flammable but durable.</lore>
+    </monster>
+    <monster id="spectral_mage">
+        <name>Spectral Arch-Mage</name>
+        <maxHp>85</maxHp>
+        <attackPower>25</attackPower>
+        <goldReward>56</goldReward>
+        <sprite>🔮</sprite>
+        <element>Arcane</element>
+        <weakness>Physical</weakness>
+        <specialMove>Aether Vortex</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>65</expReward>
+        <lore>The disembodied ghost of Valdor's court spellweaver, still commanding runes.</lore>
+    </monster>
+    <monster id="dread_minotaur">
+        <name>Dread Minotaur</name>
+        <maxHp>135</maxHp>
+        <attackPower>26</attackPower>
+        <goldReward>75</goldReward>
+        <sprite>🐂</sprite>
+        <element>Physical</element>
+        <weakness>Magic</weakness>
+        <specialMove>Labyrinth Charge</specialMove>
+        <specialAbility>berserk</specialAbility>
+        <expReward>90</expReward>
+        <lore>Rages through the winding catacomb labyrinth, pulverizing stone archways.</lore>
+    </monster>
+    <monster id="sunken_troll">
+        <name>Cave Pit Troll</name>
+        <maxHp>125</maxHp>
+        <attackPower>19</attackPower>
+        <goldReward>52</goldReward>
+        <sprite>🧌</sprite>
+        <element>Earth</element>
+        <weakness>Fire</weakness>
+        <specialMove>Club Smash</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>72</expReward>
+        <lore>Gargantuan humanoid that hefts stalagmites as weapons with bone-cracking force.</lore>
+    </monster>
+    <monster id="chasm_behemoth">
+        <name>Chasm Behemoth</name>
+        <maxHp>170</maxHp>
+        <attackPower>28</attackPower>
+        <goldReward>115</goldReward>
+        <sprite>🦖</sprite>
+        <element>Physical</element>
+        <weakness>Lightning</weakness>
+        <specialMove>Tectonic Stomp</specialMove>
+        <specialAbility>none</specialAbility>
+        <expReward>130</expReward>
+        <lore>Awakened by earthquakes beneath the deepest foundation stones of Valdor.</lore>
+    </monster>
+    <monster id="archdemon_valdor">
+        <name>Archdemon of the Ruin</name>
+        <maxHp>210</maxHp>
+        <attackPower>32</attackPower>
+        <goldReward>160</goldReward>
+        <sprite>👿</sprite>
+        <element>Fire</element>
+        <weakness>Holy</weakness>
+        <specialMove>Apocalyptic Flare</specialMove>
+        <specialAbility>burn</specialAbility>
+        <expReward>220</expReward>
+        <lore>The ultimate corrupter who brought ruin to the kingdom seven centuries ago.</lore>
+    </monster>
+</bestiary>
