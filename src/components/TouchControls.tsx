@@ -14,6 +14,8 @@ import {
   Smartphone,
   ChevronRight,
   Sparkles,
+  GripHorizontal,
+  GripVertical,
 } from 'lucide-react';
 
 export interface TouchLayoutConfig {
@@ -78,6 +80,95 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     clientY: 0,
     initialOffset: { x: 0, y: 0 },
   });
+
+  // Movable Settings Window state
+  const [modalPos, setModalPos] = useState<{ x: number; y: number } | null>(null);
+  const [isDraggingModal, setIsDraggingModal] = useState(false);
+  const modalDragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number }>({
+    startX: 0,
+    startY: 0,
+    initialX: 0,
+    initialY: 0,
+  });
+
+  // Movable Edit Mode Toolbar state
+  const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null);
+  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+  const toolbarDragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number }>({
+    startX: 0,
+    startY: 0,
+    initialX: 0,
+    initialY: 0,
+  });
+
+  const handleModalHeaderPointerDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setIsDraggingModal(true);
+    const defaultX = Math.max(16, (window.innerWidth - 420) / 2);
+    const defaultY = Math.max(20, (window.innerHeight - 560) / 2);
+    const currentX = modalPos ? modalPos.x : defaultX;
+    const currentY = modalPos ? modalPos.y : defaultY;
+    modalDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: currentX,
+      initialY: currentY,
+    };
+  };
+
+  const handleModalHeaderPointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingModal) return;
+    const dx = e.clientX - modalDragRef.current.startX;
+    const dy = e.clientY - modalDragRef.current.startY;
+    const newX = Math.max(8, Math.min(window.innerWidth - 120, modalDragRef.current.initialX + dx));
+    const newY = Math.max(8, Math.min(window.innerHeight - 80, modalDragRef.current.initialY + dy));
+    setModalPos({ x: newX, y: newY });
+  };
+
+  const handleModalHeaderPointerUp = (e: React.PointerEvent) => {
+    if (isDraggingModal) {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+      setIsDraggingModal(false);
+    }
+  };
+
+  const handleToolbarPointerDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('button, input')) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setIsDraggingToolbar(true);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    toolbarDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: toolbarPos ? toolbarPos.x : rect.left,
+      initialY: toolbarPos ? toolbarPos.y : rect.top,
+    };
+  };
+
+  const handleToolbarPointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingToolbar) return;
+    const dx = e.clientX - toolbarDragRef.current.startX;
+    const dy = e.clientY - toolbarDragRef.current.startY;
+    const newX = Math.max(10, Math.min(window.innerWidth - 150, toolbarDragRef.current.initialX + dx));
+    const newY = Math.max(10, Math.min(window.innerHeight - 60, toolbarDragRef.current.initialY + dy));
+    setToolbarPos({ x: newX, y: newY });
+  };
+
+  const handleToolbarPointerUp = (e: React.PointerEvent) => {
+    if (isDraggingToolbar) {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+      setIsDraggingToolbar(false);
+    }
+  };
 
   // Joystick game input state
   const [joystickActive, setJoystickActive] = useState(false);
@@ -655,10 +746,32 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
         </div>
 
         {/* ======================================================== */}
-        {/* EDIT MODE BOTTOM TOOLBAR                                */}
+        {/* EDIT MODE MOVABLE TOOLBAR                                */}
         {/* ======================================================== */}
         {isEditing && (
-          <div className="pointer-events-auto absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-950/95 border-2 border-amber-500 rounded-2xl p-3 shadow-2xl backdrop-blur-xl flex flex-wrap items-center justify-center gap-3 max-w-xl w-[92%] z-50 animate-fade-in">
+          <div
+            onPointerDown={handleToolbarPointerDown}
+            onPointerMove={handleToolbarPointerMove}
+            onPointerUp={handleToolbarPointerUp}
+            onPointerCancel={handleToolbarPointerUp}
+            style={
+              toolbarPos
+                ? { left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px` }
+                : { left: '50%', bottom: '16px', transform: 'translateX(-50%)' }
+            }
+            className={`pointer-events-auto absolute bg-slate-950/95 border-2 border-amber-500 rounded-2xl p-3 shadow-2xl backdrop-blur-xl flex flex-wrap items-center justify-center gap-2.5 max-w-xl w-[92%] z-50 animate-fade-in ${
+              isDraggingToolbar ? 'ring-2 ring-amber-400 cursor-grabbing shadow-[0_0_25px_rgba(245,158,11,0.5)]' : ''
+            }`}
+          >
+            {/* Movable Toolbar Grab Handle */}
+            <div
+              className="cursor-grab active:cursor-grabbing flex items-center gap-1 px-1.5 py-1 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-500/40 rounded-lg text-amber-300 select-none"
+              title="Click & drag to move this control edit bar anywhere on screen"
+            >
+              <GripVertical className="w-4 h-4 text-amber-400" />
+              <span className="text-[10px] font-mono font-bold tracking-tight">DRAG BAR</span>
+            </div>
+
             {/* Scale / Size controls */}
             <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-800">
               <span className="text-[10px] font-mono font-bold text-slate-400">SIZE:</span>
@@ -751,32 +864,74 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
               className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl border border-emerald-400 flex items-center gap-1 shadow-lg transition active:scale-95"
             >
               <Check className="w-4 h-4" />
-              <span>SAVE & CLOSE</span>
+              <span>DONE</span>
             </button>
           </div>
         )}
       </div>
 
       {/* ======================================================== */}
-      {/* TOUCH CONTROLS CONFIGURATION & POSITIONING MODAL         */}
+      {/* TOUCH CONTROLS MOVABLE CONFIGURATION & POSITIONING MODAL */}
       {/* ======================================================== */}
       {showSettingsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in select-none">
-          <div className="bg-slate-900 border-2 border-amber-600/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col text-slate-200">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-amber-950 to-slate-900 px-4 py-3 border-b border-amber-500/40 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 pointer-events-none select-none">
+          {/* Gentle translucent backdrop so player can still see the world underneath */}
+          <div
+            onClick={() => setShowSettingsModal(false)}
+            className="pointer-events-auto absolute inset-0 bg-slate-950/40 backdrop-blur-[2px] transition-opacity cursor-pointer"
+            title="Click outside to close"
+          />
+
+          <div
+            style={
+              modalPos
+                ? { left: `${modalPos.x}px`, top: `${modalPos.y}px` }
+                : { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }
+            }
+            className={`pointer-events-auto absolute bg-slate-900/95 backdrop-blur-xl border-2 border-amber-500 rounded-2xl w-[92vw] max-w-md shadow-[0_20px_50px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col text-slate-200 transition-shadow ${
+              isDraggingModal ? 'ring-2 ring-amber-400 cursor-grabbing shadow-[0_0_30px_rgba(245,158,11,0.6)]' : ''
+            }`}
+          >
+            {/* Draggable Header */}
+            <div
+              onPointerDown={handleModalHeaderPointerDown}
+              onPointerMove={handleModalHeaderPointerMove}
+              onPointerUp={handleModalHeaderPointerUp}
+              onPointerCancel={handleModalHeaderPointerUp}
+              className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950/80 px-4 py-3 border-b border-amber-500/40 flex items-center justify-between cursor-grab active:cursor-grabbing select-none"
+              title="Click and drag anywhere on this header to move the window"
+            >
               <div className="flex items-center gap-2">
-                <Smartphone className="w-5 h-5 text-amber-400" />
-                <h3 className="font-black text-sm text-white tracking-wide">
+                <GripHorizontal className="w-5 h-5 text-amber-400/80" />
+                <Smartphone className="w-4 h-4 text-amber-400" />
+                <h3 className="font-black text-xs sm:text-sm text-white tracking-wide">
                   TOUCH CONTROLS SETTINGS
                 </h3>
+                <span className="text-[10px] font-mono text-amber-300/80 bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-500/30">
+                  DRAGGABLE
+                </span>
               </div>
-              <button
-                onClick={() => setShowSettingsModal(false)}
-                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                {modalPos && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setModalPos(null);
+                    }}
+                    className="text-[10px] text-amber-300 hover:text-white px-2 py-0.5 bg-slate-800/80 hover:bg-slate-700 rounded border border-slate-700 transition"
+                    title="Center window on screen"
+                  >
+                    Center
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowSettingsModal(false)}
+                  className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
+                  title="Close settings"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Content */}
