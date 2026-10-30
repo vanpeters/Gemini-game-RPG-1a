@@ -1,4 +1,5 @@
 import { Player, WorldMonster, CombatVerificationResult, InventoryItem } from '../types/rpg';
+import { calculateEquipmentStats } from './equipment';
 
 let calculationCounter = 1000;
 
@@ -10,11 +11,13 @@ export interface CombatActionParams {
 
 /**
  * Client-side combat verification and damage calculation engine.
- * Fully verifies rolls, abilities, and status effects.
+ * Fully verifies rolls, abilities, equipment bonuses, and status effects.
  */
 export function calculateCombatAction(params: CombatActionParams): CombatVerificationResult {
   const { action, player, monster } = params;
   calculationCounter++;
+
+  const { atkBonus, defBonus } = calculateEquipmentStats(player.equipped);
 
   let damageDealt = 0;
   let damageTaken = 0;
@@ -27,16 +30,16 @@ export function calculateCombatAction(params: CombatActionParams): CombatVerific
   let abilityTriggered = monster.specialAbility;
   let lifeDrained = 0;
 
-  // 1. Process Player Action
+  // 1. Process Player Action (Base power modified by equipped weapon/relic)
   if (action === 'attack') {
-    const baseAtk = 12 + player.level * 4;
+    const baseAtk = 12 + player.level * 4 + atkBonus;
     const roll = Math.random();
     critical = roll > 0.82; // 18% crit chance
     const multiplier = critical ? 2.0 : 0.9 + Math.random() * 0.25;
     damageDealt = Math.round(baseAtk * multiplier);
   } else if (action === 'fireball') {
     manaCost = 15;
-    const baseSpell = 28 + player.level * 6;
+    const baseSpell = 28 + player.level * 6 + Math.round(atkBonus * 0.6);
     critical = Math.random() > 0.75;
     damageDealt = Math.round(baseSpell * (critical ? 1.8 : 1.1));
     // Elemental bonus vs Undead or Earth
@@ -45,7 +48,7 @@ export function calculateCombatAction(params: CombatActionParams): CombatVerific
     }
   } else if (action === 'thunder') {
     manaCost = 20;
-    const baseSpell = 34 + player.level * 7;
+    const baseSpell = 34 + player.level * 7 + Math.round(atkBonus * 0.75);
     critical = Math.random() > 0.8;
     damageDealt = Math.round(baseSpell * (critical ? 1.9 : 1.15));
     if (monster.element === 'Water' || monster.weakness === 'Lightning') {
@@ -73,7 +76,10 @@ export function calculateCombatAction(params: CombatActionParams): CombatVerific
       baseMobAtk = Math.round(baseMobAtk * 1.4);
     }
 
-    damageTaken = Math.max(3, Math.round(baseMobAtk * (0.85 + Math.random() * 0.3)));
+    // Apply player's equipped armor and shield defense mitigation
+    const mitigationPercent = Math.min(0.65, defBonus * 0.018);
+    const rawMobDamage = Math.max(3, Math.round(baseMobAtk * (0.85 + Math.random() * 0.3)));
+    damageTaken = Math.max(1, Math.round(rawMobDamage * (1 - mitigationPercent)));
 
     // Chance to enter defensive stance if monster has the ability
     if (monster.specialAbility === 'defensive_stance' && Math.random() < 0.45) {
@@ -127,11 +133,13 @@ export function calculateCombatAction(params: CombatActionParams): CombatVerific
 }
 
 /**
- * Default starting inventory items
+ * Default starting inventory items with equippable armaments
  */
 export const DEFAULT_INVENTORY: InventoryItem[] = [
-  { id: 1, itemId: 'sword_iron', name: 'Iron Broadsword', type: 'weapon', power: 14, quantity: 1, icon: '⚔️', description: 'Sturdy steel forged in Oakhaven.' },
-  { id: 2, itemId: 'armor_leather', name: 'Traveler Tunic', type: 'armor', power: 8, quantity: 1, icon: '🛡️', description: 'Reinforced with boiled leather.' },
-  { id: 3, itemId: 'pot_crimson', name: 'Crimson Potion', type: 'potion', power: 45, quantity: 5, icon: '🧪', description: 'Mends wounds and cures poison.' },
-  { id: 4, itemId: 'pot_mana', name: 'Mana Phial', type: 'potion', power: 30, quantity: 3, icon: '🍶', description: 'Refills arcane reserves.' },
+  { id: 1, itemId: 'sword_iron', name: 'Iron Broadsword', type: 'weapon', power: 14, quantity: 1, icon: '⚔️', description: 'Sturdy steel forged in Oakhaven. +14 ATK.' },
+  { id: 2, itemId: 'shield_wooden', name: 'Oak Buckler', type: 'shield', power: 6, quantity: 1, icon: '🛡️', description: 'Light wooden shield. +6 DEF, +12 Max HP.' },
+  { id: 3, itemId: 'armor_leather', name: 'Traveler Tunic', type: 'armor', power: 8, quantity: 1, icon: '🥋', description: 'Boiled leather jerkin. +6 DEF, +24 Max HP.' },
+  { id: 4, itemId: 'relic_apprentice', name: 'Apprentice Charm', type: 'relic', power: 5, quantity: 1, icon: '💍', description: 'Enchanted glass bauble. +12 Max MP, +2 ATK.' },
+  { id: 5, itemId: 'pot_crimson', name: 'Crimson Potion', type: 'potion', power: 45, quantity: 5, icon: '🧪', description: 'Mends wounds and cures poison.' },
+  { id: 6, itemId: 'pot_mana', name: 'Mana Phial', type: 'potion', power: 30, quantity: 3, icon: '🍶', description: 'Refills arcane reserves.' },
 ];

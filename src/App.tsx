@@ -37,6 +37,7 @@ import {
   GameScreen,
   Quest,
   QuestObjective,
+  EquipmentSlot,
 } from './types/rpg';
 import {
   generateOpenWorld,
@@ -59,6 +60,7 @@ import {
   saveInventoryToStorage,
 } from './utils/storage';
 import { revealFogOfWar } from './utils/fogOfWar';
+import { equipItemToPlayer, unequipItemFromPlayer } from './utils/equipment';
 import { lanMultiplayer } from './services/lanMultiplayer';
 
 export default function App() {
@@ -1152,6 +1154,40 @@ export default function App() {
     addLog(`Acquired ${item.name} for ${cost} Gold.`, 'info');
   };
 
+  // Equipment Slot System Handlers
+  const handleEquipItem = useCallback(
+    (item: InventoryItem) => {
+      setPlayer((prev) => {
+        const { updatedPlayer } = equipItemToPlayer(prev, item);
+        saveState(updatedPlayer);
+        playerRef.current = updatedPlayer;
+        sound.playVictory();
+        spawnFloatingText(`EQUIPPED ${item.name}`, updatedPlayer.x, updatedPlayer.y, 'gold');
+        addLog(
+          `⚔️ Equipped [${item.name}]! Attributes amplified: Max HP ${updatedPlayer.maxHp}, Max MP ${updatedPlayer.maxMana}.`,
+          'victory'
+        );
+        return updatedPlayer;
+      });
+    },
+    [saveState, spawnFloatingText, addLog]
+  );
+
+  const handleUnequipItem = useCallback(
+    (slot: EquipmentSlot) => {
+      setPlayer((prev) => {
+        const { updatedPlayer, unequippedItem } = unequipItemFromPlayer(prev, slot);
+        saveState(updatedPlayer);
+        playerRef.current = updatedPlayer;
+        if (unequippedItem) {
+          addLog(`Unequipped [${unequippedItem.name}].`, 'info');
+        }
+        return updatedPlayer;
+      });
+    },
+    [saveState, addLog]
+  );
+
   return (
     <div className="w-full h-screen overflow-hidden bg-slate-950 font-mono select-none">
       {screen === 'TITLE' ? (
@@ -1255,10 +1291,13 @@ export default function App() {
         onReloadXml={loadBestiaryFromXml}
       />
 
-      {/* Inventory Knapsack Modal */}
+      {/* Inventory Knapsack & Equipment Modal */}
       <InventoryModal
         isOpen={isInventoryOpen}
+        player={player}
         onClose={() => setIsInventoryOpen(false)}
+        onEquipItem={handleEquipItem}
+        onUnequipItem={handleUnequipItem}
         onUseItem={(item) => {
           if (item.type === 'potion') {
             setPlayer((p) => ({ ...p, hp: Math.min(p.maxHp, p.hp + item.power) }));

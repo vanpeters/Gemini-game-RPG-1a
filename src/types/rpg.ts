@@ -28,6 +28,18 @@ export interface Player {
   completedQuestIds?: string[];
   exploredBiomes?: BiomeType[];
   exploredTiles?: string[];
+  equipped?: EquippedGear;
+  baseMaxHp?: number;
+  baseMaxMana?: number;
+}
+
+export type EquipmentSlot = 'weapon' | 'shield' | 'armor' | 'relic';
+
+export interface EquippedGear {
+  weapon?: InventoryItem | null;
+  shield?: InventoryItem | null;
+  armor?: InventoryItem | null;
+  relic?: InventoryItem | null;
 }
 
 export interface HeroVisualArchetype {
@@ -215,7 +227,7 @@ export interface InventoryItem {
   id: number;
   itemId: string;
   name: string;
-  type: 'weapon' | 'armor' | 'potion' | 'relic';
+  type: 'weapon' | 'shield' | 'armor' | 'potion' | 'relic';
   power: number;
   quantity: number;
   description?: string;
@@ -223,6 +235,10 @@ export interface InventoryItem {
   rarity?: ItemRarity;
   lore?: string;
   isUniqueQuestReward?: boolean;
+  atkBonus?: number;
+  hpBonus?: number;
+  defBonus?: number;
+  manaBonus?: number;
 }
 
 export type QuestCategory = 'main' | 'bounty' | 'exploration' | 'heroic';

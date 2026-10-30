@@ -3,6 +3,7 @@ import { DEFAULT_INVENTORY } from './combatEngine';
 import { INITIAL_QUESTS } from './questData';
 
 import { getInitialExploredTiles } from './fogOfWar';
+import { recalculatePlayerStats } from './equipment';
 
 const PLAYER_STORAGE_KEY = 'valdor_rpg_player_save_v2';
 const OBJECTS_STORAGE_KEY = 'valdor_rpg_world_objects_v2';
@@ -15,8 +16,10 @@ export const DEFAULT_PLAYER: Player = {
   styleId: 'knight',
   sprite: '🛡️',
   level: 1,
-  hp: 100,
-  maxHp: 100,
+  baseMaxHp: 100,
+  baseMaxMana: 50,
+  hp: 136,
+  maxHp: 136,
   mana: 50,
   maxMana: 50,
   gold: 30,
@@ -33,6 +36,12 @@ export const DEFAULT_PLAYER: Player = {
   completedQuestIds: [],
   exploredBiomes: ['oakhaven'],
   exploredTiles: getInitialExploredTiles(18, 19, 8),
+  equipped: {
+    weapon: { id: 1, itemId: 'sword_iron', name: 'Iron Broadsword', type: 'weapon', power: 14, quantity: 1, icon: '⚔️', description: 'Sturdy steel forged in Oakhaven. +14 ATK.' },
+    shield: { id: 2, itemId: 'shield_wooden', name: 'Oak Buckler', type: 'shield', power: 6, quantity: 1, icon: '🛡️', description: 'Light wooden shield. +6 DEF, +12 Max HP.' },
+    armor: { id: 3, itemId: 'armor_leather', name: 'Traveler Tunic', type: 'armor', power: 8, quantity: 1, icon: '🥋', description: 'Boiled leather jerkin. +6 DEF, +24 Max HP.' },
+    relic: null,
+  },
 };
 
 export function loadSavedPlayer(): Player {
@@ -58,7 +67,7 @@ export function loadSavedPlayer(): Player {
         ? parsed.exploredTiles
         : initialExplored;
 
-      return {
+      const loaded: Player = {
         ...DEFAULT_PLAYER,
         ...parsed,
         quests: mergedQuests,
@@ -66,13 +75,17 @@ export function loadSavedPlayer(): Player {
         completedQuestIds: parsed.completedQuestIds || [],
         exploredBiomes: parsed.exploredBiomes || ['oakhaven'],
         exploredTiles: savedExplored,
+        equipped: parsed.equipped ?? DEFAULT_PLAYER.equipped,
+        baseMaxHp: parsed.baseMaxHp ?? 100 + ((parsed.level || 1) - 1) * 25,
+        baseMaxMana: parsed.baseMaxMana ?? 50 + ((parsed.level || 1) - 1) * 15,
         source: 'Client-Side Persistent DB',
       };
+      return recalculatePlayerStats(loaded);
     }
   } catch (e) {
     console.warn('Could not read player from local storage:', e);
   }
-  return { ...DEFAULT_PLAYER };
+  return recalculatePlayerStats({ ...DEFAULT_PLAYER });
 }
 
 export function savePlayerToStorage(player: Player): void {
