@@ -23,6 +23,10 @@ export interface Player {
   y?: number;
   direction?: 'up' | 'down' | 'left' | 'right';
   isMoving?: boolean;
+  activeQuestId?: string;
+  quests?: Quest[];
+  completedQuestIds?: string[];
+  exploredBiomes?: BiomeType[];
 }
 
 export interface HeroVisualArchetype {
@@ -74,6 +78,9 @@ export interface WorldMonster extends Monster {
   attackRange: number;
   speed: number;
   patrolRadius: number;
+  deadAt?: number;
+  respawnAt?: number;
+  wanderCooldown?: number;
 }
 
 export interface CombatVerificationResult {
@@ -201,6 +208,8 @@ export interface CombatLogEntry {
   sender?: string;
 }
 
+export type ItemRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+
 export interface InventoryItem {
   id: number;
   itemId: string;
@@ -210,6 +219,52 @@ export interface InventoryItem {
   quantity: number;
   description?: string;
   icon?: string;
+  rarity?: ItemRarity;
+  lore?: string;
+  isUniqueQuestReward?: boolean;
+}
+
+export type QuestCategory = 'main' | 'bounty' | 'exploration' | 'heroic';
+export type QuestStatus = 'locked' | 'available' | 'active' | 'completed' | 'claimed';
+
+export type QuestObjectiveType =
+  | 'kill'
+  | 'kill_group'
+  | 'explore_biome'
+  | 'interact_object'
+  | 'reach_level';
+
+export interface QuestObjective {
+  id: string;
+  description: string;
+  type: QuestObjectiveType;
+  targetId?: string;
+  targetGroup?: string[];
+  targetCount: number;
+  currentCount: number;
+  completed: boolean;
+}
+
+export interface QuestReward {
+  xp: number;
+  gold: number;
+  uniqueItem: InventoryItem;
+}
+
+export interface Quest {
+  id: string;
+  title: string;
+  subtitle: string;
+  lore: string;
+  giverName: string;
+  giverIcon: string;
+  chapter: number;
+  category: QuestCategory;
+  recommendedLevel: number;
+  objectives: QuestObjective[];
+  reward: QuestReward;
+  status: QuestStatus;
+  claimedAt?: number;
 }
 
 export interface NetworkPeer {

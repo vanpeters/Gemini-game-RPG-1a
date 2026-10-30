@@ -28,6 +28,13 @@ import {
   Compass,
   Gamepad2,
   Smartphone,
+  Move,
+  Scroll,
+  CheckCircle2,
+  Circle,
+  ChevronDown,
+  ChevronUp,
+  Award,
 } from 'lucide-react';
 import { getBiomeAt } from '../utils/worldGenerator';
 import { MiniMap } from './MiniMap';
@@ -49,6 +56,8 @@ interface OpenWorldHUDProps {
   onOpenInventory: () => void;
   onOpenCharacterCreation: () => void;
   onOpenTechModal: () => void;
+  onOpenQuestLog: () => void;
+  onClaimQuestReward?: (questId: string) => void;
   onToggleMute: () => void;
   isMuted: boolean;
   crtEnabled: boolean;
@@ -88,6 +97,8 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
   onOpenInventory,
   onOpenCharacterCreation,
   onOpenTechModal,
+  onOpenQuestLog,
+  onClaimQuestReward,
   onToggleMute,
   isMuted,
   crtEnabled,
@@ -104,9 +115,14 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
   const [chatInput, setChatInput] = useState('');
   const [activeLogTab, setActiveLogTab] = useState<'all' | 'chat' | 'combat'>('all');
   const [isChatExpanded, setIsChatExpanded] = useState(true);
+  const [isQuestTrackerCollapsed, setIsQuestTrackerCollapsed] = useState(false);
 
   const biomeKey = getBiomeAt(player.x ?? 18, player.y ?? 19);
   const biomeInfo = BIOME_NAMES[biomeKey];
+
+  const quests = player.quests || [];
+  const activeQuest = quests.find((q) => q.id === player.activeQuestId) || quests[0];
+  const hasClaimableQuest = quests.some((q) => q.status === 'completed');
 
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,92 +146,184 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
     <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 select-none">
       {/* TOP BAR */}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        {/* Hero Vitality Box */}
-        <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border-2 border-amber-600/60 rounded-lg p-3 shadow-2xl flex items-center gap-3 min-w-[280px]">
-          <div className="relative">
-            <div className="w-14 h-14 bg-slate-950 border-2 border-amber-500 rounded-md flex items-center justify-center text-3xl shadow-inner">
-              {player.sprite || '🛡️'}
-            </div>
-            <div className="absolute -bottom-2 -right-1 bg-amber-500 text-slate-950 font-black text-[11px] px-1.5 py-0.5 rounded shadow">
-              Lv.{player.level}
-            </div>
-          </div>
-
-          <div className="flex-1">
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-bold text-amber-300 text-sm">{player.name}</span>
-              <span className="text-[11px] px-2 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">
-                {player.class}
-              </span>
-            </div>
-
-            {/* Health Bar */}
-            <div className="mb-1.5">
-              <div className="flex justify-between text-[11px] font-mono text-emerald-400 mb-0.5">
-                <span className="flex items-center gap-1">
-                  <Heart className="w-3 h-3 fill-emerald-500 text-emerald-500" /> HP
-                </span>
-                <span>
-                  {player.hp} / {player.maxHp}
-                </span>
+        {/* Hero Section & Quest Tracker */}
+        <div className="flex flex-col gap-2 max-w-[320px]">
+          {/* Hero Vitality Box */}
+          <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border-2 border-amber-600/60 rounded-lg p-3 shadow-2xl flex items-center gap-3 min-w-[280px]">
+            <div className="relative">
+              <div className="w-14 h-14 bg-slate-950 border-2 border-amber-500 rounded-md flex items-center justify-center text-3xl shadow-inner">
+                {player.sprite || '🛡️'}
               </div>
-              <div className="w-full h-3 bg-slate-950 rounded overflow-hidden border border-slate-700">
-                <div
-                  className="h-full bg-gradient-to-r from-emerald-600 to-green-400 transition-all duration-200"
-                  style={{ width: `${hpPercent}%` }}
-                />
+              <div className="absolute -bottom-2 -right-1 bg-amber-500 text-slate-950 font-black text-[11px] px-1.5 py-0.5 rounded shadow">
+                Lv.{player.level}
               </div>
             </div>
 
-            {/* Mana Bar */}
-            <div>
-              <div className="flex justify-between text-[11px] font-mono text-cyan-400 mb-0.5">
-                <span className="flex items-center gap-1">
-                  <Zap className="w-3 h-3 fill-cyan-500 text-cyan-500" /> MP
-                </span>
-                <span>
-                  {player.mana} / {player.maxMana}
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-bold text-amber-300 text-sm">{player.name}</span>
+                <span className="text-[11px] px-2 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">
+                  {player.class}
                 </span>
               </div>
-              <div className="w-full h-2.5 bg-slate-950 rounded overflow-hidden border border-slate-700">
-                <div
-                  className="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-200"
-                  style={{ width: `${manaPercent}%` }}
-                />
-              </div>
-            </div>
 
-            {/* XP & Gold row */}
-            <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800 text-[11px]">
-              <div className="flex items-center gap-1 text-amber-400 font-bold">
-                <Coins className="w-3.5 h-3.5 text-yellow-400" />
-                <span>{player.gold} Gold</span>
-              </div>
-              <div className="flex items-center gap-1 text-sky-300 text-[10px]">
-                <span>XP:</span>
-                <div className="w-16 h-1.5 bg-slate-950 rounded overflow-hidden border border-slate-800">
-                  <div className="h-full bg-sky-400" style={{ width: `${xpPercent}%` }} />
+              {/* Health Bar */}
+              <div className="mb-1.5">
+                <div className="flex justify-between text-[11px] font-mono text-emerald-400 mb-0.5">
+                  <span className="flex items-center gap-1">
+                    <Heart className="w-3 h-3 fill-emerald-500 text-emerald-500" /> HP
+                  </span>
+                  <span>
+                    {player.hp} / {player.maxHp}
+                  </span>
                 </div>
-                <span>{xpPercent}%</span>
+                <div className="w-full h-3 bg-slate-950 rounded overflow-hidden border border-slate-700">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-600 to-green-400 transition-all duration-200"
+                    style={{ width: `${hpPercent}%` }}
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* Status Ailments Badges */}
-            {(statusEffects.poisonTurns > 0 || statusEffects.burnTurns > 0) && (
-              <div className="flex gap-1.5 mt-2">
-                {statusEffects.poisonTurns > 0 && (
-                  <span className="animate-pulse text-[10px] bg-purple-950 text-purple-300 border border-purple-600 px-1.5 py-0.5 rounded font-bold">
-                    🤢 Poisoned ({statusEffects.poisonTurns})
+              {/* Mana Bar */}
+              <div>
+                <div className="flex justify-between text-[11px] font-mono text-cyan-400 mb-0.5">
+                  <span className="flex items-center gap-1">
+                    <Zap className="w-3 h-3 fill-cyan-500 text-cyan-500" /> MP
                   </span>
-                )}
-                {statusEffects.burnTurns > 0 && (
-                  <span className="animate-pulse text-[10px] bg-orange-950 text-orange-300 border border-orange-600 px-1.5 py-0.5 rounded font-bold">
-                    🔥 Burning ({statusEffects.burnTurns})
+                  <span>
+                    {player.mana} / {player.maxMana}
                   </span>
-                )}
+                </div>
+                <div className="w-full h-2.5 bg-slate-950 rounded overflow-hidden border border-slate-700">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-200"
+                    style={{ width: `${manaPercent}%` }}
+                  />
+                </div>
               </div>
-            )}
+
+              {/* XP & Gold row */}
+              <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800 text-[11px]">
+                <div className="flex items-center gap-1 text-amber-400 font-bold">
+                  <Coins className="w-3.5 h-3.5 text-yellow-400" />
+                  <span>{player.gold} Gold</span>
+                </div>
+                <div className="flex items-center gap-1 text-sky-300 text-[10px]">
+                  <span>XP:</span>
+                  <div className="w-16 h-1.5 bg-slate-950 rounded overflow-hidden border border-slate-800">
+                    <div className="h-full bg-sky-400" style={{ width: `${xpPercent}%` }} />
+                  </div>
+                  <span>{xpPercent}%</span>
+                </div>
+              </div>
+
+              {/* Status Ailments Badges */}
+              {(statusEffects.poisonTurns > 0 || statusEffects.burnTurns > 0) && (
+                <div className="flex gap-1.5 mt-2">
+                  {statusEffects.poisonTurns > 0 && (
+                    <span className="animate-pulse text-[10px] bg-purple-950 text-purple-300 border border-purple-600 px-1.5 py-0.5 rounded font-bold">
+                      🤢 Poisoned ({statusEffects.poisonTurns})
+                    </span>
+                  )}
+                  {statusEffects.burnTurns > 0 && (
+                    <span className="animate-pulse text-[10px] bg-orange-950 text-orange-300 border border-orange-600 px-1.5 py-0.5 rounded font-bold">
+                      🔥 Burning ({statusEffects.burnTurns})
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Quest Tracker Widget */}
+          {activeQuest && (
+            <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-amber-600/50 rounded-lg p-2.5 shadow-xl transition-all">
+              <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-800">
+                <div
+                  onClick={onOpenQuestLog}
+                  className="flex items-center gap-1.5 cursor-pointer hover:text-amber-300 transition"
+                >
+                  <Scroll className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                  <span className="text-xs font-bold text-amber-300 truncate max-w-[200px]">
+                    {activeQuest.title}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={onOpenQuestLog}
+                    title="Open Full Quest Journal (Q)"
+                    className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold cursor-pointer"
+                  >
+                    [Q]
+                  </button>
+                  <button
+                    onClick={() => setIsQuestTrackerCollapsed((prev) => !prev)}
+                    className="p-0.5 text-slate-400 hover:text-slate-200 cursor-pointer"
+                  >
+                    {isQuestTrackerCollapsed ? (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {!isQuestTrackerCollapsed && (
+                <div className="mt-2 space-y-1.5">
+                  {activeQuest.objectives.map((obj) => (
+                    <div key={obj.id} className="text-[10px]">
+                      <div className="flex items-center justify-between text-slate-300 mb-0.5">
+                        <span className="flex items-center gap-1 truncate max-w-[210px]">
+                          {obj.completed ? (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                          ) : (
+                            <Circle className="w-3 h-3 text-slate-500 flex-shrink-0" />
+                          )}
+                          <span className={obj.completed ? 'line-through text-slate-500' : ''}>
+                            {obj.description}
+                          </span>
+                        </span>
+                        <span className="font-mono text-slate-400 ml-1 font-bold">
+                          {obj.currentCount}/{obj.targetCount}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-950 h-1 rounded-full overflow-hidden border border-slate-800">
+                        <div
+                          className={`h-full ${obj.completed ? 'bg-emerald-400' : 'bg-amber-500'}`}
+                          style={{
+                            width: `${Math.min(100, (obj.currentCount / obj.targetCount) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Claim or Reward Preview */}
+                  {activeQuest.status === 'completed' ? (
+                    <button
+                      onClick={() => onClaimQuestReward && onClaimQuestReward(activeQuest.id)}
+                      className="w-full mt-2 py-1 px-2 rounded bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-black text-[11px] shadow animate-pulse flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Award className="w-3.5 h-3.5" /> Claim {activeQuest.reward.uniqueItem.name}!
+                    </button>
+                  ) : (
+                    <div className="flex items-center justify-between pt-1 text-[9px] text-slate-400 border-t border-slate-800/80 mt-1">
+                      <span className="flex items-center gap-1">
+                        <span>Reward:</span>
+                        <span className="text-amber-300 font-bold">
+                          {activeQuest.reward.uniqueItem.icon} {activeQuest.reward.uniqueItem.name}
+                        </span>
+                      </span>
+                      <span className="text-yellow-400 font-bold">+{activeQuest.reward.gold}g</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Current Biome & Coordinates Banner */}
@@ -247,16 +355,31 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
               </div>
             )}
 
-            {/* Touch Controls Toggle Button */}
-            <button
-              onClick={onToggleTouchControls}
-              title={touchControlsEnabled ? 'Hide Touch Controls' : 'Show Touch Controls (Android / Mobile)'}
-              className={`p-2 border rounded-lg transition shadow ${
-                touchControlsEnabled ? 'bg-amber-950/80 border-amber-500 text-amber-300' : 'bg-slate-900/90 border-slate-700 text-slate-400'
-              }`}
-            >
-              <Smartphone className="w-4 h-4" />
-            </button>
+            {/* Touch Controls Toggle & Customize Buttons */}
+            <div className="flex items-center">
+              <button
+                onClick={onToggleTouchControls}
+                title={touchControlsEnabled ? 'Hide Touch Controls' : 'Show Touch Controls (Android / Mobile)'}
+                className={`p-2 border transition shadow ${
+                  touchControlsEnabled
+                    ? 'bg-amber-950/80 border-amber-500 text-amber-300 rounded-l-lg'
+                    : 'bg-slate-900/90 border-slate-700 text-slate-400 rounded-lg'
+                }`}
+              >
+                <Smartphone className="w-4 h-4" />
+              </button>
+              {touchControlsEnabled && (
+                <button
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('valdor:open-touch-settings'));
+                  }}
+                  title="Configure Touch Controls (Resize, Move, Opacity)"
+                  className="p-2 bg-slate-900 hover:bg-slate-800 border-y border-r border-amber-500 text-amber-400 rounded-r-lg transition shadow"
+                >
+                  <Move className="w-4 h-4" />
+                </button>
+              )}
+            </div>
 
             {/* LAN Multiplayer Button */}
             <button
@@ -272,11 +395,27 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
             </button>
 
+            {/* Quest Log Button */}
+            <button
+              onClick={onOpenQuestLog}
+              title="Quest Chronicles & Missions (Q)"
+              className={`p-2 rounded-lg border transition shadow relative cursor-pointer ${
+                hasClaimableQuest
+                  ? 'bg-amber-600/90 border-amber-400 text-white animate-pulse'
+                  : 'bg-slate-900/90 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+              }`}
+            >
+              <Scroll className="w-4 h-4 text-amber-400" />
+              {hasClaimableQuest && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 border border-slate-900 animate-ping" />
+              )}
+            </button>
+
             {/* Inventory Button */}
             <button
               onClick={onOpenInventory}
               title="Inventory (B / Xbox Start)"
-              className="p-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700 rounded-lg text-slate-300 hover:text-white transition shadow"
+              className="p-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700 rounded-lg text-slate-300 hover:text-white transition shadow cursor-pointer"
             >
               <Backpack className="w-4 h-4 text-amber-400" />
             </button>

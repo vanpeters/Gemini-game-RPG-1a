@@ -13,6 +13,7 @@ interface UseGamepadOptions {
   onCycleTarget?: () => void;
   onToggleInventory: () => void;
   onToggleTech: () => void;
+  onToggleQuestLog?: () => void;
   enabled?: boolean;
 }
 
@@ -23,6 +24,7 @@ export function useGamepad({
   onCycleTarget,
   onToggleInventory,
   onToggleTech,
+  onToggleQuestLog,
   enabled = true,
 }: UseGamepadOptions) {
   const [gamepadState, setGamepadState] = useState<GamepadState>({
@@ -209,6 +211,11 @@ export function useGamepad({
         // Back / View button: Toggle Tech Inspector
         if (justPressed(8)) {
           onToggleTech();
+        }
+
+        // Stick Click (R3 / button 11) or Guide button: Toggle Quest Journal
+        if (justPressed(10) || justPressed(11) || justPressed(16)) {
+          onToggleQuestLog?.();
         }
 
         // Store current buttons for edge trigger detection

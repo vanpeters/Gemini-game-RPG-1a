@@ -304,10 +304,8 @@ export const OpenWorldCanvas: React.FC<OpenWorldCanvasProps> = ({
         ctx.fillText(loot.label, drawX + TILE_SIZE / 2, drawY + TILE_SIZE / 2 - bounce - 12);
       }
 
-      // 4. Draw Wandering Monsters
+      // 4. Draw Wandering Monsters & Respawning Portals
       for (const mob of mobs) {
-        if (mob.hp <= 0) continue;
-
         const drawX = Math.round(mob.x * TILE_SIZE - camX + screenWidth / 2);
         const drawY = Math.round(mob.y * TILE_SIZE - camY + screenHeight / 2);
 
@@ -315,18 +313,49 @@ export const OpenWorldCanvas: React.FC<OpenWorldCanvasProps> = ({
           continue;
         }
 
+        // If dead, check if within respawn window to show forming portal
+        if (mob.hp <= 0) {
+          if (mob.respawnAt && mob.respawnAt > Date.now()) {
+            const timeLeft = Math.max(1, Math.ceil((mob.respawnAt - Date.now()) / 1000));
+            // Show respawn rift
+            ctx.save();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.arc(drawX + TILE_SIZE / 2, drawY + TILE_SIZE / 2, 16 + Math.sin(time * 6) * 3, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.font = '16px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('🌀', drawX + TILE_SIZE / 2, drawY + TILE_SIZE / 2);
+            ctx.font = 'bold 9px monospace';
+            ctx.fillStyle = '#7dd3fc';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeText(`Reviving (${timeLeft}s)`, drawX + TILE_SIZE / 2, drawY - 6);
+            ctx.fillText(`Reviving (${timeLeft}s)`, drawX + TILE_SIZE / 2, drawY - 6);
+            ctx.restore();
+          }
+          continue;
+        }
+
+        // Gentle walking bob animation when moving or patrolling
+        const isMoving = mob.state === 'chase' || mob.state === 'patrol';
+        const walkBob = isMoving ? Math.abs(Math.sin(time * 5 + mob.x * 3 + mob.y * 3)) * 3 : 0;
+
         // Aggro / Combat aura
         if (mob.state === 'chase' || mob.state === 'attack') {
           ctx.strokeStyle = '#ef4444';
           ctx.lineWidth = 1.5;
           ctx.beginPath();
-          ctx.arc(drawX + TILE_SIZE / 2, drawY + TILE_SIZE / 2, 22, 0, Math.PI * 2);
+          ctx.arc(drawX + TILE_SIZE / 2, drawY + TILE_SIZE / 2 - walkBob, 22, 0, Math.PI * 2);
           ctx.stroke();
 
           // Exclamation indicator
           ctx.font = 'bold 14px monospace';
           ctx.fillStyle = '#ef4444';
-          ctx.fillText('!', drawX + TILE_SIZE / 2, drawY - 14);
+          ctx.fillText('!', drawX + TILE_SIZE / 2, drawY - 14 - walkBob);
         }
 
         // Defensive Stance Aura
@@ -334,25 +363,25 @@ export const OpenWorldCanvas: React.FC<OpenWorldCanvasProps> = ({
           ctx.strokeStyle = '#38bdf8';
           ctx.lineWidth = 2.5;
           ctx.beginPath();
-          ctx.arc(drawX + TILE_SIZE / 2, drawY + TILE_SIZE / 2, 20, 0, Math.PI * 2);
+          ctx.arc(drawX + TILE_SIZE / 2, drawY + TILE_SIZE / 2 - walkBob, 20, 0, Math.PI * 2);
           ctx.stroke();
           ctx.font = '12px monospace';
-          ctx.fillText('🛡️', drawX + TILE_SIZE - 4, drawY + 8);
+          ctx.fillText('🛡️', drawX + TILE_SIZE - 4, drawY + 8 - walkBob);
         }
 
         // Draw Monster Sprite
         ctx.font = mob.id === 'dragon' ? '38px monospace' : '26px monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(mob.sprite || '👾', drawX + TILE_SIZE / 2, drawY + TILE_SIZE / 2);
+        ctx.fillText(mob.sprite || '👾', drawX + TILE_SIZE / 2, drawY + TILE_SIZE / 2 - walkBob);
 
         // Monster Name & Level
         ctx.font = 'bold 10px monospace';
         ctx.fillStyle = mob.id === 'dragon' ? '#f87171' : '#f1f5f9';
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 2;
-        ctx.strokeText(`Lv.${mob.level} ${mob.name}`, drawX + TILE_SIZE / 2, drawY - 6);
-        ctx.fillText(`Lv.${mob.level} ${mob.name}`, drawX + TILE_SIZE / 2, drawY - 6);
+        ctx.strokeText(`Lv.${mob.level} ${mob.name}`, drawX + TILE_SIZE / 2, drawY - 6 - walkBob);
+        ctx.fillText(`Lv.${mob.level} ${mob.name}`, drawX + TILE_SIZE / 2, drawY - 6 - walkBob);
 
         // Mini HP Bar
         const barWidth = 32;

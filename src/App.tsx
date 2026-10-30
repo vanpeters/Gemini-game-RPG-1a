@@ -19,6 +19,7 @@ import { TechInspectorModal } from './components/TechInspectorModal';
 import { InventoryModal } from './components/InventoryModal';
 import { WorldNPCModal } from './components/WorldNPCModal';
 import { TouchControls } from './components/TouchControls';
+import { QuestLogModal } from './components/QuestLogModal';
 import { useGamepad } from './hooks/useGamepad';
 import {
   Player,
@@ -34,6 +35,8 @@ import {
   RewardPreview,
   InventoryItem,
   GameScreen,
+  Quest,
+  QuestObjective,
 } from './types/rpg';
 import {
   generateOpenWorld,
@@ -96,6 +99,7 @@ export default function App() {
   const [isCharacterCreationOpen, setIsCharacterCreationOpen] = useState(false);
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
+  const [isQuestLogOpen, setIsQuestLogOpen] = useState(false);
   const [activeNpcObject, setActiveNpcObject] = useState<WorldObject | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [crtEnabled, setCrtEnabled] = useState(true);
@@ -134,6 +138,163 @@ export default function App() {
       }, 1200);
     },
     []
+  );
+
+  // Helper to evaluate and advance quest objectives
+  const updateQuestProgress = useCallback(
+    (matcher: (obj: QuestObjective, quest: Quest) => boolean, amount: number = 1) => {
+      setPlayer((prevPlayer) => {
+        let anyChanged = false;
+        let completedAnyQuest = false;
+        let completedQuestTitle = '';
+
+        const updatedQuests = (prevPlayer.quests || []).map((q) => {
+          if (q.status === 'completed' || q.status === 'claimed') return q;
+
+          let questUpdated = false;
+          const updatedObjectives = q.objectives.map((obj) => {
+            if (obj.completed) return obj;
+
+            if (matcher(obj, q)) {
+              const nextCount = Math.min(obj.targetCount, obj.currentCount + amount);
+              if (nextCount !== obj.currentCount) {
+                questUpdated = true;
+                anyChanged = true;
+                const isNowDone = nextCount >= obj.targetCount;
+                return {
+                  ...obj,
+                  currentCount: nextCount,
+                  completed: isNowDone,
+                };
+              }
+            }
+            return obj;
+          });
+
+          if (questUpdated) {
+            const allDone = updatedObjectives.every((o) => o.completed);
+            if (allDone) {
+              completedAnyQuest = true;
+              completedQuestTitle = q.title;
+              return {
+                ...q,
+                objectives: updatedObjectives,
+                status: 'completed' as const,
+              };
+            }
+            return {
+              ...q,
+              objectives: updatedObjectives,
+              status: q.status === 'available' ? ('active' as const) : q.status,
+            };
+          }
+          return q;
+        });
+
+        if (!anyChanged) return prevPlayer;
+
+        if (completedAnyQuest) {
+          sound.playQuestFanfare();
+          spawnFloatingText('⭐ QUEST COMPLETED!', prevPlayer.x, prevPlayer.y, 'level');
+          addLog(
+            `📜 QUEST COMPLETED: [${completedQuestTitle}]! Open Quest Journal [Q] to claim unique gear!`,
+            'victory'
+          );
+        } else {
+          sound.playQuestProgress();
+        }
+
+        const updated = {
+          ...prevPlayer,
+          quests: updatedQuests,
+        };
+        savePlayerToStorage(updated);
+        playerRef.current = updated;
+        return updated;
+      });
+    },
+    [addLog, spawnFloatingText]
+  );
+
+  // Claim Quest Reward & Grant Unique Inventory Items
+  const handleClaimQuestReward = useCallback(
+    (questId: string) => {
+      const cur = playerRef.current;
+      const quest = (cur.quests || []).find((q) => q.id === questId);
+      if (!quest || quest.status !== 'completed') return;
+
+      sound.playQuestFanfare();
+
+      const xpGained = quest.reward.xp;
+      const goldGained = quest.reward.gold;
+      const uniqueItem = quest.reward.uniqueItem;
+
+      // Add unique item to saved inventory
+      const inv = loadSavedInventory();
+      const existing = inv.find((i) => i.itemId === uniqueItem.itemId);
+      let updatedInv: InventoryItem[];
+      if (existing) {
+        updatedInv = inv.map((i) =>
+          i.itemId === uniqueItem.itemId ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      } else {
+        updatedInv = [...inv, uniqueItem];
+      }
+      saveInventoryToStorage(updatedInv);
+
+      // Check player level-up
+      const nextXp = cur.xp + xpGained;
+      const nextGold = cur.gold + goldGained;
+      let nextLevel = cur.level;
+      let nextMaxHp = cur.maxHp;
+      let nextHp = cur.hp;
+      let nextMaxMana = cur.maxMana;
+      let nextMana = cur.mana;
+      const didLevelUp = nextXp >= nextLevel * 100;
+
+      if (didLevelUp) {
+        nextLevel += 1;
+        nextMaxHp += 25;
+        nextHp = nextMaxHp;
+        nextMaxMana += 15;
+        nextMana = nextMaxMana;
+        spawnFloatingText(`⭐ LEVEL UP! (Lv.${nextLevel})`, cur.x, cur.y, 'level');
+        addLog(`⭐ LEVEL UP! ${cur.name} advanced to Level ${nextLevel}! Attributes surged.`, 'heal');
+      }
+
+      // Mark quest as claimed
+      const updatedQuests = (cur.quests || []).map((q) =>
+        q.id === questId ? { ...q, status: 'claimed' as const, claimedAt: Date.now() } : q
+      );
+
+      // Activate next available quest
+      const nextActive = updatedQuests.find((q) => q.status === 'active' || q.status === 'available');
+
+      const updatedHero: Player = {
+        ...cur,
+        xp: nextXp,
+        gold: nextGold,
+        level: nextLevel,
+        hp: nextHp,
+        maxHp: nextMaxHp,
+        mana: nextMana,
+        maxMana: nextMaxMana,
+        quests: updatedQuests,
+        activeQuestId: nextActive ? nextActive.id : cur.activeQuestId,
+        completedQuestIds: [...(cur.completedQuestIds || []), questId],
+      };
+
+      setPlayer(updatedHero);
+      playerRef.current = updatedHero;
+      savePlayerToStorage(updatedHero);
+
+      spawnFloatingText(`+${uniqueItem.name}`, cur.x, cur.y, 'gold');
+      addLog(
+        `🏆 Claimed Quest Reward: [${uniqueItem.name}] (${uniqueItem.rarity?.toUpperCase()}), +${goldGained} Gold & +${xpGained} XP! Unique gear stored in Knapsack [B].`,
+        'victory'
+      );
+    },
+    [addLog, spawnFloatingText]
   );
 
   // 1. Fetch XML Bestiary and spawn initial mobs
@@ -272,6 +433,21 @@ export default function App() {
         direction,
         isMoving: true,
       };
+
+      // Check biome discovery & exploration quests
+      const curBiome = getBiomeAt(targetX, targetY);
+      const explored = cur.exploredBiomes || ['oakhaven'];
+      if (!explored.includes(curBiome)) {
+        const nextExplored = [...explored, curBiome];
+        updated.exploredBiomes = nextExplored;
+        updateQuestProgress((obj) => {
+          if (obj.type === 'explore_biome' && obj.targetId === curBiome) return true;
+          if (obj.type === 'reach_level' && obj.id === 'obj_visit_all_biomes') return true;
+          return false;
+        });
+        spawnFloatingText(`DISCOVERED ${curBiome.toUpperCase()}`, targetX, targetY, 'gold');
+        addLog(`🗺️ Discovered new realm biome: ${curBiome.toUpperCase()}!`, 'info');
+      }
 
       setPlayer(updated);
       playerRef.current = updated;
@@ -461,6 +637,31 @@ export default function App() {
         const goldGained = target.gold || 30;
         const xpGained = target.expReward || 40;
 
+        // Schedule monster respawn
+        const respawnDuration = target.id === 'dragon' ? 35000 : 18000;
+        const respawnTimestamp = Date.now() + respawnDuration;
+
+        setMobs((prev) =>
+          prev.map((m) =>
+            m.instanceId === target!.instanceId
+              ? {
+                  ...m,
+                  hp: 0,
+                  isDefending: false,
+                  deadAt: Date.now(),
+                  respawnAt: respawnTimestamp,
+                }
+              : m
+          )
+        );
+
+        // Advance Quest Kill Objectives
+        updateQuestProgress((obj) => {
+          if (obj.type === 'kill' && obj.targetId === target.id) return true;
+          if (obj.type === 'kill_group' && obj.targetGroup?.includes(target.id)) return true;
+          return false;
+        });
+
         // Spawn world loot drops
         setLootDrops((prev) => [
           ...prev,
@@ -558,13 +759,33 @@ export default function App() {
     [targetEnemy, spawnFloatingText, addLog, saveState]
   );
 
-  // 7. Open World Mob AI & Patrol Loop
+  // 7. Open World Mob AI, Wandering & Respawn Loop
   useEffect(() => {
     const aiInterval = setInterval(() => {
       const cur = playerRef.current;
       setMobs((prev) =>
         prev.map((mob) => {
-          if (mob.hp <= 0) return mob;
+          // Check Respawning for dead mobs
+          if (mob.hp <= 0) {
+            if (mob.respawnAt && Date.now() >= mob.respawnAt) {
+              sound.playClick();
+              spawnFloatingText('⚡ RESPAWNED', mob.startX, mob.startY, 'gold');
+              addLog(`✨ A ${mob.name} has reformed and respawned in ${mob.biome.toUpperCase()}!`, 'info');
+              return {
+                ...mob,
+                hp: mob.maxHp,
+                x: mob.startX,
+                y: mob.startY,
+                state: 'patrol',
+                isDefending: false,
+                patrolTargetX: mob.startX,
+                patrolTargetY: mob.startY,
+                deadAt: undefined,
+                respawnAt: undefined,
+              };
+            }
+            return mob;
+          }
 
           // Distance to local player
           const distToPlayer = Math.hypot(mob.x - (cur.x ?? 18), mob.y - (cur.y ?? 19));
@@ -572,47 +793,69 @@ export default function App() {
           // If within aggro radius, chase player!
           if (distToPlayer <= mob.aggroRadius) {
             const angle = Math.atan2((cur.y ?? 19) - mob.y, (cur.x ?? 18) - mob.x);
-            const step = 0.12 * mob.speed;
+            const step = 0.075 * (mob.speed || 1);
             const newX = mob.x + Math.cos(angle) * step;
             const newY = mob.y + Math.sin(angle) * step;
 
-            return {
-              ...mob,
-              state: 'chase',
-              x: newX,
-              y: newY,
-              targetPlayerId: 'local_player',
-            };
+            // Tile collision check for chasing mob
+            if (!isTileCollidable(worldMap.tiles, Math.round(newX), Math.round(newY))) {
+              return {
+                ...mob,
+                state: 'chase',
+                x: newX,
+                y: newY,
+                targetPlayerId: 'local_player',
+              };
+            }
           }
 
-          // Otherwise, gentle patrol around spawn point
-          if (Math.random() < 0.2) {
+          // Organic Wandering / Patrol pacing
+          let targetX = mob.patrolTargetX || mob.startX;
+          let targetY = mob.patrolTargetY || mob.startY;
+
+          // Periodically or upon reaching current destination, pick a new non-collidable target
+          const distToPatrol = Math.hypot(targetX - mob.x, targetY - mob.y);
+          if (distToPatrol < 0.35 || Math.random() < 0.04) {
             const angle = Math.random() * Math.PI * 2;
-            const dist = Math.random() * mob.patrolRadius;
-            const targetX = mob.startX + Math.cos(angle) * dist;
-            const targetY = mob.startY + Math.sin(angle) * dist;
+            const dist = 0.8 + Math.random() * (mob.patrolRadius || 4);
+            const candX = Math.max(1, Math.min(WORLD_WIDTH - 2, mob.startX + Math.cos(angle) * dist));
+            const candY = Math.max(1, Math.min(WORLD_HEIGHT - 2, mob.startY + Math.sin(angle) * dist));
+
+            if (!isTileCollidable(worldMap.tiles, Math.round(candX), Math.round(candY))) {
+              targetX = candX;
+              targetY = candY;
+            }
+          }
+
+          // Move smoothly towards patrol target
+          const angle = Math.atan2(targetY - mob.y, targetX - mob.x);
+          const step = 0.032 * (mob.speed || 1);
+          const nextX = mob.x + Math.cos(angle) * step;
+          const nextY = mob.y + Math.sin(angle) * step;
+
+          if (!isTileCollidable(worldMap.tiles, Math.round(nextX), Math.round(nextY))) {
             return {
               ...mob,
               state: 'patrol',
+              x: nextX,
+              y: nextY,
               patrolTargetX: targetX,
               patrolTargetY: targetY,
             };
+          } else {
+            // Blocked by tile collision, redirect towards home
+            return {
+              ...mob,
+              patrolTargetX: mob.startX,
+              patrolTargetY: mob.startY,
+            };
           }
-
-          // Move towards patrol target
-          const angle = Math.atan2(mob.patrolTargetY - mob.y, mob.patrolTargetX - mob.x);
-          const step = 0.04;
-          return {
-            ...mob,
-            x: mob.x + Math.cos(angle) * step,
-            y: mob.y + Math.sin(angle) * step,
-          };
         })
       );
-    }, 150);
+    }, 120);
 
     return () => clearInterval(aiInterval);
-  }, []);
+  }, [worldMap.tiles, spawnFloatingText, addLog]);
 
   // 8. Status Ailments Ticking (Poison & Burn)
   useEffect(() => {
@@ -716,10 +959,20 @@ export default function App() {
         return;
       }
 
+      // Advance Quest Object Interaction Objectives
+      updateQuestProgress((o) => {
+        if (o.type === 'interact_object') {
+          if (o.targetId === obj.id) return true;
+          if (o.targetId === 'fountain_or_campfire' && (obj.type === 'fountain' || obj.type === 'campfire')) return true;
+          if (o.targetId === 'chest_ruins_1' && (obj.id === 'chest_ruins_1' || obj.id === 'chest_ruins_2')) return true;
+        }
+        return false;
+      });
+
       // NPC / Shrine dialog modal
       setActiveNpcObject(obj);
     },
-    [spawnFloatingText, addLog, saveState]
+    [spawnFloatingText, addLog, saveState, updateQuestProgress]
   );
 
   // Check nearby object for HUD interaction prompt
@@ -754,6 +1007,7 @@ export default function App() {
     onCycleTarget: handleCycleTargetEnemy,
     onToggleInventory: () => setIsInventoryOpen((prev) => !prev),
     onToggleTech: () => setIsTechModalOpen((prev) => !prev),
+    onToggleQuestLog: () => setIsQuestLogOpen((prev) => !prev),
   });
 
   useEffect(() => {
@@ -800,6 +1054,7 @@ export default function App() {
       }
 
       // Modals
+      else if (e.key === 'q' || e.key === 'Q') setIsQuestLogOpen((prev) => !prev);
       else if (e.key === 'c' || e.key === 'C') setIsCharacterCreationOpen(true);
       else if (e.key === 'b' || e.key === 'B') setIsInventoryOpen(true);
       else if (e.key === 't' || e.key === 'T') setIsTechModalOpen(true);
@@ -924,6 +1179,8 @@ export default function App() {
             onOpenInventory={() => setIsInventoryOpen(true)}
             onOpenCharacterCreation={() => setIsCharacterCreationOpen(true)}
             onOpenTechModal={() => setIsTechModalOpen(true)}
+            onOpenQuestLog={() => setIsQuestLogOpen(true)}
+            onClaimQuestReward={handleClaimQuestReward}
             onToggleMute={handleToggleMute}
             isMuted={isMuted}
             crtEnabled={crtEnabled}
@@ -1010,6 +1267,22 @@ export default function App() {
           addLog('Drank from sacred fountain. Full vitality restored!', 'heal');
         }}
         onBuyItem={handleBuyItem}
+      />
+
+      {/* Quest Chronicles & Tracking Journal Modal */}
+      <QuestLogModal
+        isOpen={isQuestLogOpen}
+        onClose={() => setIsQuestLogOpen(false)}
+        quests={player.quests || []}
+        activeQuestId={player.activeQuestId}
+        onSelectTrackedQuest={(qId) => {
+          setPlayer((p) => {
+            const updated = { ...p, activeQuestId: qId };
+            saveState(updated);
+            return updated;
+          });
+        }}
+        onClaimReward={handleClaimQuestReward}
       />
     </div>
   );

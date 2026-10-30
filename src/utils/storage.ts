@@ -1,5 +1,6 @@
 import { Player, WorldObject, InventoryItem } from '../types/rpg';
 import { DEFAULT_INVENTORY } from './combatEngine';
+import { INITIAL_QUESTS } from './questData';
 
 const PLAYER_STORAGE_KEY = 'valdor_rpg_player_save_v2';
 const OBJECTS_STORAGE_KEY = 'valdor_rpg_world_objects_v2';
@@ -25,6 +26,10 @@ export const DEFAULT_PLAYER: Player = {
   y: 19,
   direction: 'down',
   isMoving: false,
+  activeQuestId: 'quest_wildwood_patrol',
+  quests: INITIAL_QUESTS,
+  completedQuestIds: [],
+  exploredBiomes: ['oakhaven'],
 };
 
 export function loadSavedPlayer(): Player {
@@ -32,9 +37,26 @@ export function loadSavedPlayer(): Player {
     const raw = localStorage.getItem(PLAYER_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      // Merge saved quests with any newer initial quests to guarantee up-to-date missions
+      let mergedQuests = INITIAL_QUESTS.map((initQ) => {
+        const savedQ = (parsed.quests || []).find((q: any) => q.id === initQ.id);
+        if (savedQ) {
+          return {
+            ...initQ,
+            ...savedQ,
+            reward: initQ.reward, // preserve reward item definitions
+          };
+        }
+        return initQ;
+      });
+
       return {
         ...DEFAULT_PLAYER,
         ...parsed,
+        quests: mergedQuests,
+        activeQuestId: parsed.activeQuestId || 'quest_wildwood_patrol',
+        completedQuestIds: parsed.completedQuestIds || [],
+        exploredBiomes: parsed.exploredBiomes || ['oakhaven'],
         source: 'Client-Side Persistent DB',
       };
     }
@@ -149,6 +171,24 @@ ${inventory
   .map(
     (item) =>
       `INSERT OR REPLACE INTO inventory (id, item_id, name, type, power, quantity) VALUES (${item.id}, '${item.itemId}', '${item.name}', '${item.type}', ${item.power}, ${item.quantity});`
+  )
+  .join('\n')}
+
+CREATE TABLE IF NOT EXISTS quests (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    status TEXT NOT NULL,
+    completed_objectives INTEGER,
+    total_objectives INTEGER
+);
+
+${(player.quests || [])
+  .map(
+    (q) => {
+      const completedObjs = q.objectives.filter(o => o.completed).length;
+      return `INSERT OR REPLACE INTO quests (id, title, category, status, completed_objectives, total_objectives) VALUES ('${q.id}', '${q.title.replace(/'/g, "''")}', '${q.category}', '${q.status}', ${completedObjs}, ${q.objectives.length});`;
+    }
   )
   .join('\n')}
 `;
