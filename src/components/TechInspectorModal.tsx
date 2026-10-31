@@ -4,7 +4,6 @@ import {
   Terminal,
   Database,
   Code,
-  FileCode,
   RotateCw,
   Play,
   CheckCircle,
@@ -12,27 +11,41 @@ import {
   Users,
   Layers,
   Sparkles,
-  Save,
   Wifi,
+  Zap,
+  Star,
+  Shield,
+  RotateCcw,
+  Flame,
+  Snowflake,
+  Info,
 } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { parseBestiaryXML } from '../utils/xmlParser';
-import { loadSavedPlayer, loadSavedInventory, generateSqlDump } from '../utils/storage';
+import { loadSavedPlayer, loadSavedInventory } from '../utils/storage';
+import { Player } from '../types/rpg';
+import { COMBAT_SKILLS, getSkillRankInfo, canUnlockOrUpgradeSkill } from '../utils/skillData';
 
 interface TechInspectorModalProps {
   isOpen: boolean;
+  player: Player;
   onClose: () => void;
   onReloadXml: () => void;
+  onUnlockOrUpgradeSkill: (skillId: string) => void;
+  onRespecSkills?: () => void;
 }
 
-type TabType = 'overview' | 'xml' | 'sql' | 'lan' | 'code';
+type TabType = 'skills' | 'overview' | 'xml' | 'sql' | 'lan';
 
 export const TechInspectorModal: React.FC<TechInspectorModalProps> = ({
   isOpen,
+  player,
   onClose,
   onReloadXml,
+  onUnlockOrUpgradeSkill,
+  onRespecSkills,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>('skills');
   const [copied, setCopied] = useState<string | null>(null);
 
   // XML Editor state
@@ -81,28 +94,26 @@ export const TechInspectorModal: React.FC<TechInspectorModalProps> = ({
 
   const runSql = (query: string) => {
     setSqlError(null);
-    const player = loadSavedPlayer();
+    const savedPlayer = loadSavedPlayer();
     const inventory = loadSavedInventory();
 
     const normalized = query.trim().toLowerCase();
 
     if (normalized.includes('characters')) {
       setSqlResult({
-        columns: ['id', 'name', 'class', 'level', 'hp', 'max_hp', 'mana', 'max_mana', 'gold', 'xp', 'x', 'y'],
+        columns: ['id', 'name', 'class', 'level', 'skill_points', 'hp', 'max_hp', 'mana', 'gold', 'xp'],
         rows: [
           [
-            player.id,
-            player.name,
-            player.class,
-            player.level,
-            player.hp,
-            player.maxHp,
-            player.mana,
-            player.maxMana,
-            player.gold,
-            player.xp,
-            Math.round(player.x ?? 18),
-            Math.round(player.y ?? 19),
+            savedPlayer.id,
+            savedPlayer.name,
+            savedPlayer.class,
+            savedPlayer.level,
+            savedPlayer.skillPoints ?? 0,
+            savedPlayer.hp,
+            savedPlayer.maxHp,
+            savedPlayer.mana,
+            savedPlayer.gold,
+            savedPlayer.xp,
           ],
         ],
       });
@@ -124,67 +135,277 @@ export const TechInspectorModal: React.FC<TechInspectorModalProps> = ({
 
   if (!isOpen) return null;
 
+  const skillPoints = player.skillPoints ?? 0;
+  const unlockedSkills = player.unlockedSkills ?? {};
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md font-mono select-none">
-      <div className="relative w-full max-w-4xl bg-slate-900 border-2 border-amber-500 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md font-mono select-none animate-in fade-in zoom-in-95">
+      <div className="relative w-full max-w-4xl bg-slate-900 border-2 border-amber-500/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between bg-slate-950 px-5 py-3 border-b border-amber-600/50">
+        <div className="flex items-center justify-between bg-slate-950 px-5 py-3 border-b border-amber-500/40">
           <div className="flex items-center gap-2.5">
-            <Terminal className="w-5 h-5 text-amber-400" />
-            <h2 className="text-base font-bold text-amber-300 uppercase tracking-wide">
-              Game Engine & Architecture Console
-            </h2>
+            <Terminal className="w-5 h-5 text-amber-400 animate-pulse" />
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-amber-300 uppercase tracking-wide">
+                Tech Inspector & Combat Skill Tree
+              </h2>
+              <p className="text-[10px] text-slate-400">
+                Level-up progression, DOMParser XML bestiary, client-side SQL, and WebRTC architecture
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white text-lg font-bold px-2 py-0.5 rounded hover:bg-slate-800 transition"
+            className="p-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
+            title="Close [ESC]"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex bg-slate-950/60 border-b border-slate-800 text-xs font-bold overflow-x-auto">
+        <div className="flex bg-slate-950/70 border-b border-slate-800 text-xs font-bold overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('skills')}
+            className={`px-4 py-2.5 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'skills'
+                ? 'bg-amber-600 text-white shadow-inner'
+                : 'text-slate-400 hover:text-amber-300'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
+            <span>Combat Abilities & Skill Points ({skillPoints})</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('overview')}
-            className={`px-4 py-2.5 flex items-center gap-1.5 transition whitespace-nowrap ${
-              activeTab === 'overview' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'
+            className={`px-4 py-2.5 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'overview'
+                ? 'bg-amber-600 text-white shadow-inner'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
             <span>Architecture Overview</span>
           </button>
+
           <button
             onClick={() => setActiveTab('xml')}
-            className={`px-4 py-2.5 flex items-center gap-1.5 transition whitespace-nowrap ${
-              activeTab === 'xml' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'
+            className={`px-4 py-2.5 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'xml'
+                ? 'bg-amber-600 text-white shadow-inner'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
             <Code className="w-3.5 h-3.5" />
             <span>XML Bestiary (DOMParser)</span>
           </button>
+
           <button
             onClick={() => setActiveTab('sql')}
-            className={`px-4 py-2.5 flex items-center gap-1.5 transition whitespace-nowrap ${
-              activeTab === 'sql' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'
+            className={`px-4 py-2.5 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'sql'
+                ? 'bg-amber-600 text-white shadow-inner'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
             <Database className="w-3.5 h-3.5" />
             <span>Relational SQL & Storage</span>
           </button>
+
           <button
             onClick={() => setActiveTab('lan')}
-            className={`px-4 py-2.5 flex items-center gap-1.5 transition whitespace-nowrap ${
-              activeTab === 'lan' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'
+            className={`px-4 py-2.5 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'lan'
+                ? 'bg-amber-600 text-white shadow-inner'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
             <Wifi className="w-3.5 h-3.5" />
-            <span>LAN Multiplayer Architecture</span>
+            <span>LAN Multiplayer</span>
           </button>
         </div>
 
-        {/* Body Content */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-4">
+        {/* Tab Body */}
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
+          {/* ======================================================== */}
+          {/* TAB 1: COMBAT ABILITIES & SKILL POINT SYSTEM             */}
+          {/* ======================================================== */}
+          {activeTab === 'skills' && (
+            <div className="space-y-4">
+              {/* Skill Point Balance Banner */}
+              <div className="bg-gradient-to-r from-amber-950/70 via-slate-950 to-slate-900 border border-amber-500/50 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-400 flex items-center justify-center text-2xl shadow-inner">
+                    ⚡
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-amber-200">
+                        Available Skill Points:
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 text-xs font-bold font-mono animate-bounce">
+                        {skillPoints} Available
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Earn <span className="text-amber-300 font-bold">+1 Skill Point</span> every time your hero levels up!
+                      Current Level: <span className="text-emerald-400 font-bold">Lv.{player.level}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {onRespecSkills && (
+                    <button
+                      onClick={() => {
+                        sound.playPotion();
+                        onRespecSkills();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      title="Reset all abilities and refund skill points"
+                    >
+                      <RotateCcw className="w-3 h-3 text-amber-400" />
+                      <span>Re-spec Points</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Skills Tree Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {COMBAT_SKILLS.map((skill) => {
+                  const currentRank = unlockedSkills[skill.id] || 0;
+                  const isUnlocked = currentRank > 0;
+                  const isMax = currentRank >= skill.maxRank;
+                  const canUpgrade = canUnlockOrUpgradeSkill(player, skill.id);
+                  const activeRankInfo = getSkillRankInfo(skill.id, currentRank);
+                  const nextRankInfo = getSkillRankInfo(skill.id, currentRank + 1);
+
+                  return (
+                    <div
+                      key={skill.id}
+                      className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
+                        isUnlocked
+                          ? `${skill.borderClass} bg-gradient-to-b from-slate-900 to-slate-950/90 shadow-lg ring-1 ring-amber-500/20`
+                          : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                      }`}
+                    >
+                      <div>
+                        {/* Top info */}
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-11 h-11 rounded-lg border border-slate-700 bg-slate-900/90 flex items-center justify-center text-2xl shadow-inner flex-shrink-0">
+                              {skill.icon}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`font-bold text-sm ${skill.accentColor}`}>
+                                  {skill.name}
+                                </span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono font-bold">
+                                  {skill.keybind}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-sans">
+                                {skill.tagline}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Rank Stars */}
+                          <div className="flex flex-col items-end">
+                            <div className="flex items-center gap-0.5 text-xs">
+                              {[1, 2, 3].map((starIdx) => (
+                                <span
+                                  key={starIdx}
+                                  className={
+                                    starIdx <= currentRank ? 'text-amber-400' : 'text-slate-700'
+                                  }
+                                >
+                                  ★
+                                </span>
+                              ))}
+                            </div>
+                            <span className="text-[9px] font-mono text-slate-400">
+                              {isUnlocked ? `Rank ${currentRank}/${skill.maxRank}` : 'Locked'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Description / Rank effect */}
+                        <div className="bg-slate-950/70 border border-slate-800/80 rounded-lg p-2.5 mb-2.5 text-xs text-slate-300 min-h-[64px] flex flex-col justify-center">
+                          {isUnlocked && activeRankInfo ? (
+                            <div>
+                              <div className="text-[11px] leading-relaxed">
+                                {activeRankInfo.description}
+                              </div>
+                              <div className="text-[10px] font-mono text-emerald-400 font-bold mt-1">
+                                {activeRankInfo.effectSummary}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-slate-400 italic">
+                              {skill.ranks[0].description}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Next Rank Preview if not max */}
+                        {!isMax && (
+                          <div className="text-[10px] text-slate-400 mb-3 px-1">
+                            <span className="text-amber-300 font-bold">Next Rank preview: </span>
+                            <span>{nextRankInfo?.effectSummary}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Button */}
+                      <div>
+                        {isMax ? (
+                          <div className="w-full py-2 rounded-lg bg-amber-950/40 border border-amber-600/50 text-amber-300 text-center text-xs font-bold">
+                            👑 Mastered (Max Rank 3)
+                          </div>
+                        ) : (
+                          <button
+                            disabled={!canUpgrade}
+                            onClick={() => {
+                              sound.playVictory();
+                              onUnlockOrUpgradeSkill(skill.id);
+                            }}
+                            className={`w-full py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer active:scale-95 ${
+                              canUpgrade
+                                ? 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white shadow-amber-500/20'
+                                : 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed'
+                            }`}
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                            <span>
+                              {currentRank === 0
+                                ? 'Unlock Ability (1 Point)'
+                                : `Upgrade to Rank ${currentRank + 1} (1 Point)`}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Combat hotbar guide banner */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-[11px] text-slate-400 flex items-center gap-2.5">
+                <Info className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <div>
+                  Unlocked combat abilities appear directly on your HUD Action Hotbar and can be triggered in battle using keys <span className="text-amber-300 font-bold">[5]</span> for Whirlwind, <span className="text-cyan-300 font-bold">[6]</span> for Frost Nova, <span className="text-yellow-300 font-bold">[7]</span> for Thunder Smite, and <span className="text-emerald-300 font-bold">[8]</span> for Iron Bastion!
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB 2: ARCHITECTURE OVERVIEW                             */}
+          {/* ======================================================== */}
           {activeTab === 'overview' && (
             <div className="space-y-4 text-xs">
               <div className="bg-slate-950 border border-slate-800 rounded-lg p-4">
@@ -221,51 +442,46 @@ export const TechInspectorModal: React.FC<TechInspectorModalProps> = ({
                 <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5">
                   <div className="font-bold text-slate-200 flex items-center gap-2 mb-1.5">
                     <span className="text-lg">📜</span>
-                    <span>XML Bestiary Configuration</span>
+                    <span>XML Data Parsing (DOMParser)</span>
                   </div>
                   <p className="text-slate-400 leading-normal">
-                    Structured XML schema extracted with the browser&apos;s native DOMParser. All 38 monster archetypes, abilities, resistances, and lore are loaded directly.
+                    All 38 monster definitions, boss behaviors, element alignments, and stat curves are loaded directly from <code className="text-amber-300">/enemies.xml</code> using the browser's native DOMParser API.
                   </p>
                 </div>
 
                 <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5">
                   <div className="font-bold text-slate-200 flex items-center gap-2 mb-1.5">
                     <span className="text-lg">💾</span>
-                    <span>Client-Side Relational DB</span>
+                    <span>Relational SQL Client Storage</span>
                   </div>
                   <p className="text-slate-400 leading-normal">
-                    Full persistence for player stats, coordinates, inventory, and opened world chests in local client storage with SQL schema inspection.
+                    Player progress, opened world chests, quest objectives, and equipment are backed by a structured relational table schema and persisted to localStorage.
                   </p>
                 </div>
               </div>
             </div>
           )}
 
+          {/* ======================================================== */}
+          {/* TAB 3: XML BESTIARY EDITOR                               */}
+          {/* ======================================================== */}
           {activeTab === 'xml' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-300">enemies.xml (Native DOMParser)</span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={fetchXml}
-                    disabled={xmlLoading}
-                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded flex items-center gap-1.5 transition"
-                  >
-                    <RotateCw className={`w-3.5 h-3.5 ${xmlLoading ? 'animate-spin' : ''}`} />
-                    <span>Reload XML</span>
-                  </button>
-                  <button
-                    onClick={handleApplyXml}
-                    className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded flex items-center gap-1.5 transition shadow"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>Re-parse Bestiary</span>
-                  </button>
-                </div>
+                <span className="text-xs text-slate-300 font-bold">
+                  Editing: /enemies.xml (Native Browser DOMParser)
+                </span>
+                <button
+                  onClick={handleApplyXml}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  <span>Parse & Apply Changes</span>
+                </button>
               </div>
 
               {xmlStatus && (
-                <div className="text-xs font-mono px-3 py-2 bg-slate-950 border border-slate-800 rounded text-amber-300">
+                <div className="text-xs text-amber-300 bg-slate-950 p-2 rounded border border-amber-600/40">
                   {xmlStatus}
                 </div>
               )}
@@ -273,54 +489,58 @@ export const TechInspectorModal: React.FC<TechInspectorModalProps> = ({
               <textarea
                 value={xmlContent}
                 onChange={(e) => setXmlContent(e.target.value)}
-                className="w-full h-80 bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs font-mono text-emerald-400 resize-none outline-none focus:border-amber-500"
+                rows={16}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-3 text-xs font-mono text-emerald-400 focus:outline-none focus:border-amber-500 leading-relaxed resize-y"
               />
             </div>
           )}
 
+          {/* ======================================================== */}
+          {/* TAB 4: SQL CONSOLE                                       */}
+          {/* ======================================================== */}
           {activeTab === 'sql' && (
             <div className="space-y-3">
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={sqlQuery}
                   onChange={(e) => setSqlQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && runSql(sqlQuery)}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-amber-200 focus:outline-none focus:border-amber-500 font-mono"
                   placeholder="e.g. SELECT * FROM characters;"
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs font-mono text-amber-300 outline-none"
                 />
                 <button
                   onClick={() => runSql(sqlQuery)}
-                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded transition flex items-center gap-1.5"
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold transition cursor-pointer"
                 >
-                  <Play className="w-3.5 h-3.5" />
-                  <span>Execute SQL</span>
+                  Execute SQL
                 </button>
               </div>
 
               {sqlError && (
-                <div className="text-xs text-red-400 bg-red-950/60 p-2 rounded border border-red-800">
+                <div className="text-xs text-red-400 bg-red-950/50 p-2 rounded border border-red-800">
                   {sqlError}
                 </div>
               )}
 
               {sqlResult && (
-                <div className="overflow-x-auto border border-slate-800 rounded-lg bg-slate-950">
-                  <table className="w-full text-left text-xs font-mono">
-                    <thead className="bg-slate-900 border-b border-slate-800 text-slate-400">
+                <div className="overflow-x-auto border border-slate-800 rounded bg-slate-950">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-900 border-b border-slate-800 text-amber-300">
                       <tr>
-                        {sqlResult.columns.map((col, idx) => (
-                          <th key={idx} className="p-2 border-r border-slate-800 last:border-r-0">
+                        {sqlResult.columns.map((col) => (
+                          <th key={col} className="px-3 py-2 font-bold uppercase tracking-wider">
                             {col}
                           </th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800 text-slate-200">
+                    <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
                       {sqlResult.rows.map((row, rIdx) => (
-                        <tr key={rIdx} className="hover:bg-slate-900/50">
-                          {row.map((val, cIdx) => (
-                            <td key={cIdx} className="p-2 border-r border-slate-800 last:border-r-0">
-                              {String(val)}
+                        <tr key={rIdx} className="hover:bg-slate-900/40">
+                          {row.map((cell, cIdx) => (
+                            <td key={cIdx} className="px-3 py-2 text-slate-300 whitespace-nowrap">
+                              {String(cell)}
                             </td>
                           ))}
                         </tr>
@@ -329,55 +549,33 @@ export const TechInspectorModal: React.FC<TechInspectorModalProps> = ({
                   </table>
                 </div>
               )}
-
-              {/* Schema SQL dump view */}
-              <div className="pt-2">
-                <div className="text-xs font-bold text-slate-400 mb-1">Generated schema.sql:</div>
-                <pre className="bg-slate-950 border border-slate-800 rounded p-3 text-[11px] font-mono text-slate-400 overflow-x-auto max-h-40">
-                  {generateSqlDump(loadSavedPlayer(), loadSavedInventory())}
-                </pre>
-              </div>
             </div>
           )}
 
+          {/* ======================================================== */}
+          {/* TAB 5: LAN ARCHITECTURE                                  */}
+          {/* ======================================================== */}
           {activeTab === 'lan' && (
-            <div className="space-y-4 text-xs">
+            <div className="space-y-4 text-xs text-slate-300 leading-relaxed">
               <div className="bg-slate-950 border border-slate-800 rounded-lg p-4">
-                <h3 className="font-bold text-amber-300 text-sm mb-2 flex items-center gap-2">
-                  <Wifi className="w-4 h-4 text-amber-400" />
-                  Peer-to-Peer LAN Networking Protocol
-                </h3>
-                <p className="text-slate-300 leading-relaxed">
-                  Ruins of Valdor synchronizes player coordinates, actions, party chat, and world monsters using a decentralized mesh topology:
+                <h4 className="font-bold text-amber-300 text-sm mb-2 flex items-center gap-2">
+                  <Wifi className="w-4 h-4 text-cyan-400" />
+                  Dual-Transport LAN Mesh
+                </h4>
+                <p>
+                  Ruins of Valdor utilizes a dual-transport network strategy:
                 </p>
-                <ul className="list-disc list-inside mt-2 space-y-1.5 text-slate-400">
+                <ul className="list-disc pl-5 mt-2 space-y-1 text-slate-400">
                   <li>
-                    <strong className="text-slate-200">Tier 1: BroadcastChannel</strong> — Operates instantly across multiple browser tabs and windows on the same origin with 0ms relay delay.
+                    <strong className="text-slate-200">BroadcastChannel API:</strong> Instant zero-overhead IPC synchronization between multiple tabs or windows running on the same computer or local network testing environment.
                   </li>
                   <li>
-                    <strong className="text-slate-200">Tier 2: WebRTC DataChannels</strong> — Direct P2P transport between separate laptops, PCs, or phones on the same local Wi-Fi.
-                  </li>
-                  <li>
-                    <strong className="text-slate-200">Host Authority</strong> — The world host is authoritative for mob spawns, patrol behaviors, and chest states, preventing desync.
-                  </li>
-                  <li>
-                    <strong className="text-slate-200">Hermetic Resilience</strong> — No central server daemon to compile, manage, or crash.
+                    <strong className="text-slate-200">WebRTC DataChannels:</strong> Low-latency UDP-like P2P communication between multiple distinct laptops, desktops, or Android phones connected to the same local Wi-Fi or LAN router.
                   </li>
                 </ul>
               </div>
             </div>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between bg-slate-950 px-5 py-3 border-t border-slate-800 text-xs">
-          <span className="text-slate-500">Ruins of Valdor v2.5 Client Architecture</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded transition"
-          >
-            Close
-          </button>
         </div>
       </div>
     </div>

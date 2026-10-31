@@ -42,6 +42,16 @@ export const DEFAULT_PLAYER: Player = {
     armor: { id: 3, itemId: 'armor_leather', name: 'Traveler Tunic', type: 'armor', power: 8, quantity: 1, icon: '🥋', description: 'Boiled leather jerkin. +6 DEF, +24 Max HP.' },
     relic: null,
   },
+  skillPoints: 1,
+  unlockedSkills: {},
+  currentRealmId: 1,
+  discoveredRealms: [1],
+  realmExploredTiles: { 1: getInitialExploredTiles(20, 22, 8) },
+  pvpEnabled: false,
+  pvpKills: 0,
+  pvpDeaths: 0,
+  pvpHonor: 0,
+  pvpRank: 'Recruit',
 };
 
 export function loadSavedPlayer(): Player {
@@ -62,7 +72,7 @@ export function loadSavedPlayer(): Player {
         return initQ;
       });
 
-      const initialExplored = getInitialExploredTiles(parsed.x || 18, parsed.y || 19, 8);
+      const initialExplored = getInitialExploredTiles(parsed.x || 20, parsed.y || 22, 8);
       const savedExplored = Array.isArray(parsed.exploredTiles) && parsed.exploredTiles.length > 0
         ? parsed.exploredTiles
         : initialExplored;
@@ -78,6 +88,18 @@ export function loadSavedPlayer(): Player {
         equipped: parsed.equipped ?? DEFAULT_PLAYER.equipped,
         baseMaxHp: parsed.baseMaxHp ?? 100 + ((parsed.level || 1) - 1) * 25,
         baseMaxMana: parsed.baseMaxMana ?? 50 + ((parsed.level || 1) - 1) * 15,
+        skillPoints: parsed.skillPoints !== undefined ? parsed.skillPoints : 1,
+        unlockedSkills: parsed.unlockedSkills || {},
+        currentRealmId: parsed.currentRealmId || 1,
+        discoveredRealms: Array.isArray(parsed.discoveredRealms) && parsed.discoveredRealms.length > 0
+          ? parsed.discoveredRealms
+          : [1],
+        realmExploredTiles: parsed.realmExploredTiles || { [parsed.currentRealmId || 1]: savedExplored },
+        pvpEnabled: Boolean(parsed.pvpEnabled),
+        pvpKills: parsed.pvpKills || 0,
+        pvpDeaths: parsed.pvpDeaths || 0,
+        pvpHonor: parsed.pvpHonor || 0,
+        pvpRank: parsed.pvpRank || 'Recruit',
         source: 'Client-Side Persistent DB',
       };
       return recalculatePlayerStats(loaded);

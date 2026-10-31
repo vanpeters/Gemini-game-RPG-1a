@@ -1,7 +1,8 @@
 import { BiomeType, WorldObject, WorldMonster, Monster } from '../types/rpg';
+import { getRealmById, REALMS } from './realmsData';
 
-export const WORLD_WIDTH = 80; // tiles
-export const WORLD_HEIGHT = 80; // tiles
+export const WORLD_WIDTH = 100; // expanded to 100x100 tiles
+export const WORLD_HEIGHT = 100; // expanded to 100x100 tiles
 export const TILE_SIZE = 48; // px
 
 export type TileType =
@@ -16,7 +17,16 @@ export type TileType =
   | 'wall'
   | 'tree'
   | 'ruin_pillar'
-  | 'swamp_mud';
+  | 'swamp_mud'
+  | 'snow'
+  | 'ice'
+  | 'sand'
+  | 'sandstone'
+  | 'obsidian'
+  | 'void_stone'
+  | 'crystal'
+  | 'dungeon_floor'
+  | 'dungeon_wall';
 
 export interface WorldMapData {
   tiles: TileType[][];
@@ -24,285 +34,440 @@ export interface WorldMapData {
 }
 
 export function getBiomeAt(x: number, y: number): BiomeType {
-  if (x >= 52 && y >= 60) return 'caldera';
-  if (x >= 40 && y >= 38) return 'mire';
-  if (y >= 36 && x <= 38) return 'ruins';
-  if (x >= 30 && y <= 36) return 'wildwood';
+  if (x >= 65 && y >= 65) return 'caldera';
+  if (x >= 50 && y >= 45) return 'mire';
+  if (y >= 45 && x <= 48) return 'ruins';
+  if (x >= 40 && y <= 45) return 'wildwood';
   return 'oakhaven';
 }
 
 /**
- * Procedurally generates the 80x80 open world map
+ * Procedurally generates the 100x100 open world map for a given Realm (1 to 12)
+ * Each realm features:
+ * - Its own distinct Town with Town Elder, Blacksmith, Alchemist, Rejuvenation Fountain,
+ *   Sacred Campfire, Realm Portal Gateway, and PVP Duel War Ring.
+ * - Expansive themed wilderness terrain.
+ * - An ominous Dungeon Sector with stone walls, elite guards, a grand Boss Sanctum, and a Realm Vault coffer!
  */
-export function generateOpenWorld(): WorldMapData {
+export function generateRealmWorld(realmId: number = 1): WorldMapData {
+  const realm = getRealmById(realmId);
   const tiles: TileType[][] = [];
 
+  // Theme-specific base tiles
+  let naturalFloor: TileType = 'grass';
+  let naturalPillar: TileType = 'tree';
+  let naturalPath: TileType = 'dirt';
+  let naturalLiquid: TileType = 'water';
+  let townStreet: TileType = 'cobblestone';
+
+  switch (realm.theme) {
+    case 'glacial':
+      naturalFloor = 'snow';
+      naturalPillar = 'crystal';
+      naturalPath = 'stone_slab';
+      naturalLiquid = 'ice';
+      townStreet = 'stone_slab';
+      break;
+    case 'volcanic':
+      naturalFloor = 'dirt';
+      naturalPillar = 'ruin_pillar';
+      naturalPath = 'stone_slab';
+      naturalLiquid = 'lava';
+      townStreet = 'stone_slab';
+      break;
+    case 'oceanic':
+      naturalFloor = 'sand';
+      naturalPillar = 'ruin_pillar';
+      naturalPath = 'wood_plank';
+      naturalLiquid = 'water';
+      townStreet = 'wood_plank';
+      break;
+    case 'sylvan':
+      naturalFloor = 'grass';
+      naturalPillar = 'tree';
+      naturalPath = 'dirt';
+      naturalLiquid = 'water';
+      townStreet = 'wood_plank';
+      break;
+    case 'necropolis':
+      naturalFloor = 'stone_slab';
+      naturalPillar = 'ruin_pillar';
+      naturalPath = 'dirt';
+      naturalLiquid = 'swamp_mud';
+      townStreet = 'stone_slab';
+      break;
+    case 'celestial':
+      naturalFloor = 'stone_slab';
+      naturalPillar = 'crystal';
+      naturalPath = 'cobblestone';
+      naturalLiquid = 'water';
+      townStreet = 'cobblestone';
+      break;
+    case 'swamp':
+      naturalFloor = 'swamp_mud';
+      naturalPillar = 'tree';
+      naturalPath = 'dirt';
+      naturalLiquid = 'water';
+      townStreet = 'wood_plank';
+      break;
+    case 'desert':
+      naturalFloor = 'sand';
+      naturalPillar = 'ruin_pillar';
+      naturalPath = 'sandstone';
+      naturalLiquid = 'water';
+      townStreet = 'sandstone';
+      break;
+    case 'obsidian':
+      naturalFloor = 'obsidian';
+      naturalPillar = 'ruin_pillar';
+      naturalPath = 'stone_slab';
+      naturalLiquid = 'lava';
+      townStreet = 'obsidian';
+      break;
+    case 'astral':
+      naturalFloor = 'void_stone';
+      naturalPillar = 'crystal';
+      naturalPath = 'stone_slab';
+      naturalLiquid = 'deep_water';
+      townStreet = 'stone_slab';
+      break;
+    case 'abyss':
+      naturalFloor = 'obsidian';
+      naturalPillar = 'ruin_pillar';
+      naturalPath = 'stone_slab';
+      naturalLiquid = 'lava';
+      townStreet = 'obsidian';
+      break;
+    default:
+      naturalFloor = 'grass';
+      naturalPillar = 'tree';
+      naturalPath = 'dirt';
+      naturalLiquid = 'water';
+      townStreet = 'cobblestone';
+      break;
+  }
+
+  // 1. Generate Base Terrain & Town/Dungeon Zones
   for (let y = 0; y < WORLD_HEIGHT; y++) {
     const row: TileType[] = [];
     for (let x = 0; x < WORLD_WIDTH; x++) {
-      // World boundary walls
+      // Outer World boundary walls
       if (x === 0 || y === 0 || x === WORLD_WIDTH - 1 || y === WORLD_HEIGHT - 1) {
         row.push('wall');
         continue;
       }
 
-      const biome = getBiomeAt(x, y);
+      // Town Zone (x: 14 to 38, y: 14 to 38)
+      const inTown = x >= 14 && x <= 38 && y >= 14 && y <= 38;
+      if (inTown) {
+        // Town outer defensive perimeter walls with gates
+        if (
+          (x === 14 || x === 38 || y === 14 || y === 38) &&
+          !(y >= 24 && y <= 27 && (x === 14 || x === 38)) &&
+          !(x >= 24 && x <= 27 && (y === 14 || y === 38))
+        ) {
+          row.push('wall');
+          continue;
+        }
 
-      if (biome === 'oakhaven') {
-        // Village paths & buildings
-        if ((x >= 14 && x <= 22 && (y === 18 || y === 19)) || (y >= 14 && y <= 24 && (x === 18 || x === 19))) {
-          row.push('cobblestone');
-        } else if ((x >= 12 && x <= 16 && y >= 12 && y <= 15) || (x >= 21 && x <= 25 && y >= 12 && y <= 15)) {
-          // Houses
-          if (x === 12 || x === 16 || y === 12 || (x === 21 || x === 25 || y === 12)) {
+        // Town Main Streets (Crossroads)
+        const isMainAvenueX = y >= 24 && y <= 26;
+        const isMainAvenueY = x >= 24 && x <= 26;
+        if (isMainAvenueX || isMainAvenueY) {
+          row.push(townStreet);
+          continue;
+        }
+
+        // Town Buildings
+        // Elder's Lodge (x: 18-22, y: 18-22)
+        if (x >= 18 && x <= 22 && y >= 18 && y <= 22) {
+          if (x === 18 || x === 22 || y === 18 || (y === 22 && x !== 20)) {
             row.push('wall');
           } else {
             row.push('wood_plank');
           }
-        } else if (Math.random() < 0.05) {
-          row.push('tree');
-        } else {
-          row.push('grass');
+          continue;
         }
-      } else if (biome === 'wildwood') {
-        // Forest with dirt trails and clustered trees
-        const isPath = (x + Math.sin(y * 0.4) * 3) > 42 && (x + Math.sin(y * 0.4) * 3) < 46;
-        if (isPath) {
-          row.push('dirt');
-        } else if (Math.random() < 0.18) {
-          row.push('tree');
-        } else {
-          row.push('grass');
+
+        // Blacksmith Forge (x: 29-33, y: 18-22)
+        if (x >= 29 && x <= 33 && y >= 18 && y <= 22) {
+          if (x === 29 || x === 33 || y === 18 || (y === 22 && x !== 31)) {
+            row.push('wall');
+          } else {
+            row.push('stone_slab');
+          }
+          continue;
         }
-      } else if (biome === 'ruins') {
-        // Ancient Valdor Fortress
-        if (Math.random() < 0.08) {
-          row.push('ruin_pillar');
-        } else if ((x % 7 === 0 || y % 7 === 0) && Math.random() < 0.7) {
-          row.push('wall');
-        } else {
-          row.push('stone_slab');
+
+        // Alchemist Apothecary (x: 18-22, y: 29-33)
+        if (x >= 18 && x <= 22 && y >= 29 && y <= 33) {
+          if (x === 18 || x === 22 || y === 33 || (y === 29 && x !== 20)) {
+            row.push('wall');
+          } else {
+            row.push('wood_plank');
+          }
+          continue;
         }
-      } else if (biome === 'mire') {
-        // Swamp bogs & water pools
-        const noise = Math.sin(x * 0.3) + Math.cos(y * 0.3);
-        if (noise > 1.1) {
-          row.push('water');
-        } else if (noise > 0.5) {
-          row.push('swamp_mud');
-        } else if (Math.random() < 0.1) {
-          row.push('tree');
-        } else {
-          row.push('dirt');
+
+        // PVP Duel Arena Ring in Town (x: 29-35, y: 29-35)
+        if (x >= 29 && x <= 35 && y >= 29 && y <= 35) {
+          if (x === 29 || x === 35 || y === 29 || y === 35) {
+            row.push('stone_slab');
+          } else {
+            row.push('dirt');
+          }
+          continue;
         }
+
+        // Town plaza open space
+        row.push(townStreet);
+        continue;
+      }
+
+      // Dungeon Sector (x: 62 to 94, y: 62 to 94)
+      const inDungeon = x >= 62 && x <= 94 && y >= 62 && y <= 94;
+      if (inDungeon) {
+        // Dungeon Outer Fortress Wall
+        if (
+          (x === 62 || x === 94 || y === 62 || y === 94) &&
+          !(x === 64 && y === 62) &&
+          !(y === 64 && x === 62)
+        ) {
+          row.push('dungeon_wall');
+          continue;
+        }
+
+        // Boss Sanctum Chamber (x: 80 to 92, y: 80 to 92)
+        const inBossRoom = x >= 80 && x <= 92 && y >= 80 && y <= 92;
+        if (inBossRoom) {
+          if (
+            (x === 80 || x === 92 || y === 80 || y === 92) &&
+            !(x >= 85 && x <= 87 && y === 80)
+          ) {
+            row.push('dungeon_wall');
+          } else {
+            row.push('dungeon_floor');
+          }
+          continue;
+        }
+
+        // Dungeon Corridor & Vault Grid Pattern
+        const isWallGrid = (x % 6 === 0 || y % 6 === 0) && Math.sin(x * 1.5 + y) > -0.2;
+        if (isWallGrid && Math.hypot(x - 64, y - 64) > 3) {
+          row.push('dungeon_wall');
+        } else {
+          row.push('dungeon_floor');
+        }
+        continue;
+      }
+
+      // Wilderness Procedural Landscaping
+      const noiseA = Math.sin(x * 0.18) + Math.cos(y * 0.18);
+      const noiseB = Math.cos(x * 0.4) * Math.sin(y * 0.4);
+
+      // Liquid pools / rivers
+      if (noiseA > 1.35) {
+        row.push(naturalLiquid);
+      } else if (noiseB > 0.65) {
+        row.push(naturalPillar);
+      } else if (Math.sin(x * 0.1 + y * 0.1) > 0.7) {
+        row.push(naturalPath);
       } else {
-        // Caldera: Molten lava and scorched earth
-        const lavaNoise = Math.sin(x * 0.5) * Math.cos(y * 0.5);
-        if (lavaNoise > 0.4) {
-          row.push('lava');
-        } else if (Math.random() < 0.07) {
-          row.push('ruin_pillar');
-        } else {
-          row.push('stone_slab');
-        }
+        row.push(naturalFloor);
       }
     }
     tiles.push(row);
   }
 
-  // Predefined interactive world objects
+  // 2. Predefined Interactive World Objects for this Realm
+  const town = realm.town;
+  const dung = realm.dungeon;
+
   const objects: WorldObject[] = [
-    // Oakhaven Village NPCs & Features
+    // Town NPCs
     {
-      id: 'obj_elder_cedric',
+      id: `obj_elder_${realm.id}`,
       type: 'npc',
-      x: 17,
-      y: 17,
-      name: 'Elder Cedric',
-      icon: '🧙‍♂️',
+      x: 20,
+      y: 20,
+      name: `${town.elderName}`,
+      icon: town.elderIcon,
       biome: 'oakhaven',
-      description: 'The wise elder of Oakhaven Village.',
-      interactionPrompt: 'Press [E] to talk to Elder Cedric',
+      description: `${town.elderTitle} of ${town.name}.`,
+      interactionPrompt: `Press [E] to speak with ${town.elderName}`,
       dialogue: [
-        'Greetings, brave wanderer! Welcome to the haven of Oakhaven.',
-        'The ancient ruins to the south have grown treacherous. Fell beasts stir in the Caldera.',
-        'Gather your allies over LAN multiplayer and reclaim the Runes of Valdor!',
+        `Welcome to ${town.name}, traveler of the Twelve Realms!`,
+        realm.lore,
+        `Beware ${dung.name} to the southeast. ${dung.bossName} stirs within!`,
+        `Use the Ancient Realm Gateway in town square to travel between discovered worlds.`,
       ],
     },
     {
-      id: 'obj_blacksmith',
+      id: `obj_smith_${realm.id}`,
       type: 'npc',
-      x: 23,
-      y: 17,
-      name: 'Garek the Blacksmith',
+      x: 31,
+      y: 20,
+      name: town.smithName,
       icon: '⚒️',
       biome: 'oakhaven',
-      description: 'Master smith forging runes and heavy battle armor.',
-      interactionPrompt: 'Press [E] to inspect Forge',
+      description: 'Master armorer and weapon forger.',
+      interactionPrompt: `Press [E] to consult Forge`,
       dialogue: [
-        'Need steel or rune weapons? Keep your blade sharp in the Wildwood!',
-        'Every beast felled gives gold for better enchantments.',
+        `Looking for heavy armor or sharper steel for ${realm.name}?`,
+        `Slay the beasts in ${dung.name} and bring back their cores!`,
       ],
     },
     {
-      id: 'obj_alchemist',
+      id: `obj_alchemist_${realm.id}`,
       type: 'npc',
-      x: 15,
-      y: 22,
-      name: 'Alchemist Lyra',
+      x: 20,
+      y: 31,
+      name: town.alchemistName,
       icon: '🧪',
       biome: 'oakhaven',
-      description: 'Purveyor of restorative brews and antidotes.',
-      interactionPrompt: 'Press [E] to consult Alchemist',
+      description: 'Purveyor of health tonics, mana elixirs, and cures.',
+      interactionPrompt: `Press [E] to browse Tonics`,
       dialogue: [
-        'Watch out for the Gloom Mire serpents—their venom is deadly!',
-        'Use Crimson Potions [4] to purge toxins and mend your lifeforce.',
+        `The beasts of ${realm.name} are unforgiving. Stock up on Crimson Potions [4]!`,
+        `Our sacred rejuvenation spring in town will instantly restore full health and mana.`,
       ],
     },
+
+    // Town Plaza Features
     {
-      id: 'obj_fountain',
+      id: `obj_fountain_${realm.id}`,
       type: 'fountain',
-      x: 18,
-      y: 18,
-      name: 'Fountain of Rejuvenation',
+      x: 25,
+      y: 24,
+      name: `Rejuvenation Spring of ${town.name}`,
       icon: '⛲',
       biome: 'oakhaven',
-      description: 'Enchanted waters bubbling with pure vitality.',
-      interactionPrompt: 'Press [E] or touch to drink and restore full HP/Mana',
+      description: 'Enchanted waters bubbling with revitalizing mana.',
+      interactionPrompt: 'Press [E] to drink and restore full HP & Mana',
     },
     {
-      id: 'obj_campfire_village',
+      id: `obj_campfire_${realm.id}`,
       type: 'campfire',
-      x: 20,
-      y: 22,
-      name: 'Sacred Campfire',
+      x: 25,
+      y: 27,
+      name: `Sacred Hearth of ${town.name}`,
       icon: '🔥',
       biome: 'oakhaven',
-      description: 'Warm, crackling hearth offering solace and rest.',
+      description: 'A crackling communal campfire offering respite and saving your progress.',
       interactionPrompt: 'Press [E] to rest and save progress',
     },
 
-    // Wildwood Points of Interest
+    // Realm Fast Travel Gateway Portal
     {
-      id: 'chest_wildwood_1',
+      id: `obj_portal_gateway_${realm.id}`,
+      type: 'portal',
+      x: 25,
+      y: 21,
+      name: `Ancient Realm Gateway [World ${realm.id}/12]`,
+      icon: '🌀',
+      biome: 'oakhaven',
+      description: 'Humming celestial portal connecting the Twelve Realms of the Multiverse.',
+      interactionPrompt: 'Press [E] to activate Realm Travel Gateway',
+    },
+
+    // PVP War Ring Banner / Duelist
+    {
+      id: `obj_pvp_ring_${realm.id}`,
+      type: 'shrine',
+      x: 32,
+      y: 32,
+      name: 'PVP War Ring & Duel Arena',
+      icon: '⚔️',
+      biome: 'oakhaven',
+      description: 'The town dueling circle. Challenge gladiator champions or toggle PVP mode.',
+      interactionPrompt: 'Press [E] to enter PVP Duels & Arena',
+    },
+
+    // Wilderness POIs & Chests
+    {
+      id: `chest_wild_${realm.id}_1`,
       type: 'chest',
       x: 48,
-      y: 15,
-      name: 'Elven Moss Chest',
+      y: 24,
+      name: `${realm.name} Explorer Cache`,
       icon: '📦',
       opened: false,
       biome: 'wildwood',
-      description: 'An ancient chest overgrown with luminescent moss.',
-      interactionPrompt: 'Press [E] to open chest',
-      loot: { gold: 45, potion: 'Crimson Elixir' },
+      description: 'A weathered strongbox tucked in the wild.',
+      interactionPrompt: 'Press [E] to unlock cache',
+      loot: { gold: 50 * realm.id, potion: 'Crimson Elixir' },
     },
     {
-      id: 'chest_wildwood_2',
+      id: `chest_wild_${realm.id}_2`,
       type: 'chest',
-      x: 62,
-      y: 28,
-      name: 'Bandit Cache',
-      icon: '📦',
-      opened: false,
-      biome: 'wildwood',
-      description: 'Hidden stash tucked away in the deep canopy.',
-      interactionPrompt: 'Press [E] to loot cache',
-      loot: { gold: 60, item: 'Hunter Cloak' },
-    },
-    {
-      id: 'shrine_wildwood',
-      type: 'shrine',
-      x: 55,
-      y: 20,
-      name: 'Shrine of the Sylvan Goddess',
-      icon: '⛩️',
-      biome: 'wildwood',
-      description: 'A quiet carved monolith humming with nature mana.',
-      interactionPrompt: 'Press [E] to receive nature blessing (+Mana)',
-    },
-
-    // Ruins of Valdor
-    {
-      id: 'chest_ruins_1',
-      type: 'chest',
-      x: 22,
-      y: 48,
-      name: 'Ancient Valdor Reliquary',
-      icon: '🪙',
-      opened: false,
-      biome: 'ruins',
-      description: 'A reinforced coffer bearing the Royal Crest of Valdor.',
-      interactionPrompt: 'Press [E] to unlock Reliquary',
-      loot: { gold: 120, item: 'Rune Blade' },
-    },
-    {
-      id: 'chest_ruins_2',
-      type: 'chest',
-      x: 32,
-      y: 65,
-      name: 'Crypt Sarcophagus',
-      icon: '📦',
-      opened: false,
-      biome: 'ruins',
-      description: 'Heavy granite sarcophagus containing entombed relics.',
-      interactionPrompt: 'Press [E] to open sarcophagus',
-      loot: { gold: 150, potion: 'Mana Nectar' },
-    },
-    {
-      id: 'shrine_ruins',
-      type: 'shrine',
-      x: 18,
+      x: 24,
       y: 58,
-      name: 'Monolith of the Arch-Magi',
-      icon: '🔮',
-      biome: 'ruins',
-      description: 'Inscribed with forgotten arcane equations from the First Age.',
-      interactionPrompt: 'Press [E] to absorb Arcane Surge',
-    },
-
-    // Gloom Mire
-    {
-      id: 'chest_mire',
-      type: 'chest',
-      x: 52,
-      y: 48,
-      name: 'Sunken Iron Strongbox',
+      name: `${realm.name} Forgotten Coffer`,
       icon: '📦',
       opened: false,
-      biome: 'mire',
-      description: 'Tarnished chest retrieved from the bog waters.',
-      interactionPrompt: 'Press [E] to pry open strongbox',
-      loot: { gold: 90, potion: 'Antidote Draught' },
+      biome: 'wildwood',
+      description: 'An ancient coffer overgrown by local flora.',
+      interactionPrompt: 'Press [E] to open coffer',
+      loot: { gold: 75 * realm.id, potion: 'Mana Draught' },
+    },
+    {
+      id: `shrine_wild_${realm.id}`,
+      type: 'shrine',
+      x: 52,
+      y: 52,
+      name: `Monolith of ${realm.name}`,
+      icon: '⛩️',
+      biome: 'ruins',
+      description: 'An ancient monolith pulsating with primordial elemental energy.',
+      interactionPrompt: 'Press [E] to commune with the Monolith',
     },
 
-    // Molten Caldera
+    // Dungeon Complex POIs
     {
-      id: 'chest_caldera_dragon',
+      id: `obj_dungeon_gate_${realm.id}`,
+      type: 'portal',
+      x: 64,
+      y: 64,
+      name: `Dungeon Gate: ${dung.name}`,
+      icon: '🚪',
+      biome: 'ruins',
+      description: `${dung.subtitle}. Enter at your own peril!`,
+      interactionPrompt: `Press [E] to inspect Dungeon Gate (${dung.name})`,
+    },
+    {
+      id: `chest_dungeon_${realm.id}_vault`,
       type: 'chest',
-      x: 70,
-      y: 70,
-      name: 'Dragon Horde Chest',
+      x: 88,
+      y: 84,
+      name: `Grand Vault of ${dung.bossName}`,
       icon: '👑',
       opened: false,
       biome: 'caldera',
-      description: 'Glittering vault guarded by the Nether Dragon.',
-      interactionPrompt: 'Press [E] to open the Dragon Horde',
-      loot: { gold: 500, item: 'Valdor Crown of Valor' },
+      description: `Guarded by ${dung.bossName}! Contains the legendary [${dung.uniqueLootName}].`,
+      interactionPrompt: 'Press [E] to plunder the Grand Vault',
+      loot: { gold: dung.bossGold, item: dung.uniqueLootName },
     },
     {
-      id: 'obj_campfire_caldera',
-      type: 'campfire',
-      x: 58,
-      y: 65,
-      name: 'Obsidian Waystation Campfire',
-      icon: '🔥',
+      id: `obj_dungeon_exit_portal_${realm.id}`,
+      type: 'portal',
+      x: 82,
+      y: 84,
+      name: `Sanctum Teleport Glyph (Return to ${town.name})`,
+      icon: '💠',
       biome: 'caldera',
-      description: 'Shielded campfire protected from volcanic heat.',
-      interactionPrompt: 'Press [E] to rest before the Dragon encounter',
+      description: 'Ancient arcane glyph that teleports back to the town square.',
+      interactionPrompt: `Press [E] to teleport to ${town.name}`,
     },
   ];
 
   return { tiles, objects };
+}
+
+/**
+ * Backwards compatibility for single-world callers
+ */
+export function generateOpenWorld(): WorldMapData {
+  return generateRealmWorld(1);
 }
 
 /**
@@ -313,85 +478,162 @@ export function isTileCollidable(tiles: TileType[][], x: number, y: number): boo
     return true;
   }
   const tile = tiles[y][x];
-  return tile === 'wall' || tile === 'tree' || tile === 'ruin_pillar' || tile === 'water' || tile === 'lava';
+  return (
+    tile === 'wall' ||
+    tile === 'tree' ||
+    tile === 'ruin_pillar' ||
+    tile === 'water' ||
+    tile === 'deep_water' ||
+    tile === 'lava' ||
+    tile === 'dungeon_wall' ||
+    tile === 'crystal'
+  );
 }
 
 /**
- * Spawns initial open-world monsters based on the bestiary XML templates
+ * Spawns monsters for a given Realm based on bestiary XML templates and realm difficulty level
  */
-export function spawnOpenWorldMonsters(bestiary: Monster[]): WorldMonster[] {
+export function spawnRealmMonsters(realmId: number = 1, bestiary: Monster[]): WorldMonster[] {
   if (!bestiary || bestiary.length === 0) return [];
 
+  const realm = getRealmById(realmId);
+  const dung = realm.dungeon;
   const mobs: WorldMonster[] = [];
 
-  // Helper to find bestiary mob by id or fallback
   const findMob = (id: string): Monster => {
     return bestiary.find((m) => m.id === id) || bestiary[0];
   };
 
-  const spawnDefs: Array<{
-    templateId: string;
-    x: number;
-    y: number;
-    biome: BiomeType;
-    patrolRadius: number;
-    level: number;
-  }> = [
-    // Wildwood mobs (Level 1-3)
-    { templateId: 'goblin', x: 38, y: 16, biome: 'wildwood', patrolRadius: 4, level: 1 },
-    { templateId: 'goblin_spearman', x: 44, y: 18, biome: 'wildwood', patrolRadius: 5, level: 2 },
-    { templateId: 'dire_wolf', x: 50, y: 14, biome: 'wildwood', patrolRadius: 6, level: 2 },
-    { templateId: 'woodland_sprite', x: 58, y: 22, biome: 'wildwood', patrolRadius: 4, level: 3 },
-    { templateId: 'orc_warrior', x: 64, y: 20, biome: 'wildwood', patrolRadius: 5, level: 3 },
-    { templateId: 'bandit_rogue', x: 46, y: 26, biome: 'wildwood', patrolRadius: 5, level: 2 },
-
-    // Ruins of Valdor (Level 3-5)
-    { templateId: 'skeleton', x: 18, y: 42, biome: 'ruins', patrolRadius: 4, level: 3 },
-    { templateId: 'skeleton_archer', x: 26, y: 46, biome: 'ruins', patrolRadius: 5, level: 4 },
-    { templateId: 'phantom_knight', x: 16, y: 54, biome: 'ruins', patrolRadius: 5, level: 4 },
-    { templateId: 'abyssal_cultist', x: 28, y: 56, biome: 'ruins', patrolRadius: 4, level: 5 },
-    { templateId: 'gargoyle_sentinel', x: 34, y: 50, biome: 'ruins', patrolRadius: 3, level: 5 },
-    { templateId: 'lich', x: 22, y: 64, biome: 'ruins', patrolRadius: 5, level: 6 },
-
-    // Gloom Mire (Level 4-6)
-    { templateId: 'venom_spitter', x: 46, y: 44, biome: 'mire', patrolRadius: 4, level: 4 },
-    { templateId: 'swamp_hydra', x: 56, y: 46, biome: 'mire', patrolRadius: 5, level: 5 },
-    { templateId: 'bog_horror', x: 64, y: 48, biome: 'mire', patrolRadius: 6, level: 5 },
-    { templateId: 'toxic_sludge', x: 52, y: 54, biome: 'mire', patrolRadius: 4, level: 4 },
-
-    // Molten Caldera (Level 6-8, Dragon Boss)
-    { templateId: 'magma_golem', x: 58, y: 68, biome: 'caldera', patrolRadius: 4, level: 6 },
-    { templateId: 'fire_elemental', x: 64, y: 64, biome: 'caldera', patrolRadius: 5, level: 7 },
-    { templateId: 'orc_berserker', x: 62, y: 72, biome: 'caldera', patrolRadius: 4, level: 6 },
-    { templateId: 'dragon', x: 68, y: 68, biome: 'caldera', patrolRadius: 6, level: 9 }, // BOSS!
+  // 1. Wilderness wandering monsters (scaled by realm recommended level)
+  const wildernessDefs = [
+    { templateId: 'goblin', x: 44, y: 22, patrolRadius: 5 },
+    { templateId: 'goblin_spearman', x: 48, y: 28, patrolRadius: 6 },
+    { templateId: 'dire_wolf', x: 54, y: 20, patrolRadius: 6 },
+    { templateId: 'woodland_sprite', x: 58, y: 32, patrolRadius: 5 },
+    { templateId: 'bandit_rogue', x: 42, y: 44, patrolRadius: 5 },
+    { templateId: 'venom_spitter', x: 54, y: 48, patrolRadius: 5 },
+    { templateId: 'skeleton', x: 34, y: 56, patrolRadius: 5 },
+    { templateId: 'skeleton_archer', x: 46, y: 62, patrolRadius: 6 },
+    { templateId: 'toxic_sludge', x: 56, y: 60, patrolRadius: 5 },
   ];
 
-  spawnDefs.forEach((def, idx) => {
+  wildernessDefs.forEach((def, idx) => {
     const template = findMob(def.templateId);
+    const lvl = realm.recommendedLevel + Math.floor(idx / 3);
+    const hp = template.maxHp + (lvl - 1) * 22;
+    const atk = template.atk + (lvl - 1) * 4;
+
     mobs.push({
       ...template,
-      instanceId: `mob_${def.templateId}_${idx}`,
+      instanceId: `mob_r${realmId}_w_${def.templateId}_${idx}`,
       x: def.x,
       y: def.y,
       startX: def.x,
       startY: def.y,
       patrolTargetX: def.x,
       patrolTargetY: def.y,
-      biome: def.biome,
+      biome: 'wildwood',
       state: 'patrol',
       targetPlayerId: null,
       lastAttackTime: 0,
-      level: def.level,
-      aggroRadius: def.templateId === 'dragon' ? 7 : 5,
+      level: lvl,
+      aggroRadius: 5.5,
       attackRange: 1.4,
-      speed: def.templateId === 'dire_wolf' ? 2.2 : 1.2,
-      maxHp: template.maxHp + (def.level - 1) * 15,
-      hp: template.maxHp + (def.level - 1) * 15,
-      atk: template.atk + (def.level - 1) * 3,
+      speed: def.templateId === 'dire_wolf' ? 2.0 : 1.2,
+      maxHp: hp,
+      hp: hp,
+      atk: atk,
+      gold: template.gold + lvl * 8,
+      expReward: template.expReward + lvl * 12,
       isDefending: false,
       patrolRadius: def.patrolRadius,
     });
   });
 
+  // 2. Dungeon Sector Elite Guardians
+  const dungeonDefs = [
+    { templateId: 'orc_warrior', x: 68, y: 66, patrolRadius: 4 },
+    { templateId: 'phantom_knight', x: 74, y: 66, patrolRadius: 4 },
+    { templateId: 'abyssal_cultist', x: 74, y: 74, patrolRadius: 5 },
+    { templateId: 'gargoyle_sentinel', x: 80, y: 70, patrolRadius: 3 },
+    { templateId: 'orc_berserker', x: 70, y: 80, patrolRadius: 4 },
+    { templateId: 'magma_golem', x: 78, y: 82, patrolRadius: 4 },
+    { templateId: 'fire_elemental', x: 86, y: 76, patrolRadius: 4 },
+  ];
+
+  dungeonDefs.forEach((def, idx) => {
+    const template = findMob(def.templateId);
+    const lvl = dung.bossLevel - 2 + (idx % 2);
+    const hp = template.maxHp + (lvl - 1) * 30;
+    const atk = template.atk + (lvl - 1) * 5;
+
+    mobs.push({
+      ...template,
+      instanceId: `mob_r${realmId}_d_${def.templateId}_${idx}`,
+      x: def.x,
+      y: def.y,
+      startX: def.x,
+      startY: def.y,
+      patrolTargetX: def.x,
+      patrolTargetY: def.y,
+      biome: 'ruins',
+      state: 'patrol',
+      targetPlayerId: null,
+      lastAttackTime: 0,
+      level: lvl,
+      aggroRadius: 6,
+      attackRange: 1.4,
+      speed: 1.1,
+      maxHp: hp,
+      hp: hp,
+      atk: atk,
+      gold: template.gold + lvl * 14,
+      expReward: template.expReward + lvl * 18,
+      isDefending: false,
+      patrolRadius: def.patrolRadius,
+    });
+  });
+
+  // 3. Dungeon Realm Boss
+  const baseBossTemplate = findMob('dragon');
+  mobs.push({
+    ...baseBossTemplate,
+    id: dung.bossId,
+    name: `${dung.bossName} [BOSS]`,
+    instanceId: `boss_r${realmId}_${dung.bossId}`,
+    sprite: dung.bossIcon,
+    x: dung.bossX,
+    y: dung.bossY,
+    startX: dung.bossX,
+    startY: dung.bossY,
+    patrolTargetX: dung.bossX,
+    patrolTargetY: dung.bossY,
+    biome: 'caldera',
+    state: 'patrol',
+    targetPlayerId: null,
+    lastAttackTime: 0,
+    level: dung.bossLevel,
+    aggroRadius: 8,
+    attackRange: 1.8,
+    speed: 1.4,
+    maxHp: dung.bossHp,
+    hp: dung.bossHp,
+    atk: dung.bossAtk,
+    gold: dung.bossGold,
+    expReward: dung.bossExp,
+    isDefending: false,
+    patrolRadius: 5,
+    lore: `${dung.bossTitle} - Rules ${dung.name} in ${realm.name}.`,
+    specialAbility: 'berserk',
+    specialMove: 'Cataclysmic Ruin',
+  });
+
   return mobs;
+}
+
+/**
+ * Backwards compatibility for single-world callers
+ */
+export function spawnOpenWorldMonsters(bestiary: Monster[]): WorldMonster[] {
+  return spawnRealmMonsters(1, bestiary);
 }

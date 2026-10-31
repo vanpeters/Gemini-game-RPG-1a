@@ -1,4 +1,4 @@
-import { NetworkPeer, MultiplayerMessage, ChatMessage, WorldMonster } from '../types/rpg';
+import { NetworkPeer, MultiplayerMessage, ChatMessage, WorldMonster, CombatAction } from '../types/rpg';
 
 type MessageHandler = (msg: MultiplayerMessage) => void;
 
@@ -143,6 +143,8 @@ class LanMultiplayerService {
     mana: number;
     maxMana: number;
     level: number;
+    realmId?: number;
+    pvpEnabled?: boolean;
   }) {
     this.broadcast(
       'HEARTBEAT',
@@ -157,11 +159,42 @@ class LanMultiplayerService {
   /**
    * Notify peers of combat attack action
    */
-  public sendAttackAction(action: 'attack' | 'fireball' | 'thunder' | 'heal', targetPos?: { x: number; y: number }) {
+  public sendAttackAction(action: CombatAction | 'heal', targetPos?: { x: number; y: number }) {
     this.broadcast('ATTACK', {
       action,
       targetPos,
     });
+  }
+
+  /**
+   * Broadcast PVP Hit towards a target peer
+   */
+  public sendPvpAttack(targetPeerId: string, damage: number, attackerName: string, actionName: string) {
+    this.broadcast(
+      'PVP_ATTACK',
+      {
+        targetPeerId,
+        damage,
+        attackerName,
+        actionName,
+      },
+      attackerName
+    );
+  }
+
+  /**
+   * Broadcast PVP Kill event
+   */
+  public sendPvpKill(victimPeerId: string, victimName: string, killerName: string) {
+    this.broadcast(
+      'PVP_KILL',
+      {
+        victimPeerId,
+        victimName,
+        killerName,
+      },
+      killerName
+    );
   }
 
   /**

@@ -1,17 +1,18 @@
-import { Player, WorldMonster, CombatVerificationResult, InventoryItem } from '../types/rpg';
+import { Player, WorldMonster, CombatVerificationResult, InventoryItem, CombatAction } from '../types/rpg';
 import { calculateEquipmentStats } from './equipment';
+import { getSkillRankInfo } from './skillData';
 
 let calculationCounter = 1000;
 
 export interface CombatActionParams {
-  action: 'attack' | 'fireball' | 'thunder' | 'potion';
+  action: CombatAction;
   player: Player;
   monster: WorldMonster;
 }
 
 /**
  * Client-side combat verification and damage calculation engine.
- * Fully verifies rolls, abilities, equipment bonuses, and status effects.
+ * Fully verifies rolls, abilities, equipment bonuses, skill levels, and status effects.
  */
 export function calculateCombatAction(params: CombatActionParams): CombatVerificationResult {
   const { action, player, monster } = params;
@@ -30,7 +31,7 @@ export function calculateCombatAction(params: CombatActionParams): CombatVerific
   let abilityTriggered = monster.specialAbility;
   let lifeDrained = 0;
 
-  // 1. Process Player Action (Base power modified by equipped weapon/relic)
+  // 1. Process Player Action (Base power modified by equipped weapon/relic and skill ranks)
   if (action === 'attack') {
     const baseAtk = 12 + player.level * 4 + atkBonus;
     const roll = Math.random();
@@ -54,6 +55,35 @@ export function calculateCombatAction(params: CombatActionParams): CombatVerific
     if (monster.element === 'Water' || monster.weakness === 'Lightning') {
       damageDealt = Math.round(damageDealt * 1.4);
     }
+  } else if (action === 'whirlwind') {
+    const rank = getSkillRankInfo('whirlwind', player.unlockedSkills?.whirlwind || 1);
+    manaCost = rank?.manaCost ?? 18;
+    const basePower = (rank?.power ?? 42) + atkBonus;
+    critical = Math.random() > 0.8;
+    damageDealt = Math.round(basePower * (critical ? 2.0 : 1.05));
+  } else if (action === 'frost_nova') {
+    const rank = getSkillRankInfo('frost_nova', player.unlockedSkills?.frost_nova || 1);
+    manaCost = rank?.manaCost ?? 22;
+    const basePower = (rank?.power ?? 50) + Math.round(atkBonus * 0.7);
+    critical = Math.random() > 0.8;
+    damageDealt = Math.round(basePower * (critical ? 1.9 : 1.1));
+    if (monster.element === 'Fire' || monster.weakness === 'Ice') {
+      damageDealt = Math.round(damageDealt * 1.4);
+    }
+  } else if (action === 'thunder_smite') {
+    const rank = getSkillRankInfo('thunder_smite', player.unlockedSkills?.thunder_smite || 1);
+    manaCost = rank?.manaCost ?? 25;
+    const basePower = (rank?.power ?? 65) + Math.round(atkBonus * 0.85);
+    critical = Math.random() > 0.75;
+    damageDealt = Math.round(basePower * (critical ? 2.1 : 1.15));
+    if (monster.element === 'Water' || monster.weakness === 'Lightning') {
+      damageDealt = Math.round(damageDealt * 1.45);
+    }
+  } else if (action === 'iron_bastion') {
+    const rank = getSkillRankInfo('iron_bastion', player.unlockedSkills?.iron_bastion || 1);
+    manaCost = rank?.manaCost ?? 20;
+    healAmount = rank?.rank === 3 ? 90 : rank?.rank === 2 ? 55 : 30;
+    damageDealt = 0;
   } else if (action === 'potion') {
     healAmount = 50 + player.level * 10;
   }

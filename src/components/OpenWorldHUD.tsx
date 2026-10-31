@@ -8,6 +8,7 @@ import {
   StatusEffects,
   RewardPreview,
   BiomeType,
+  CombatAction,
 } from '../types/rpg';
 import {
   Shield,
@@ -39,6 +40,9 @@ import {
   EyeOff,
   Minimize2,
   Maximize2,
+  Globe,
+  Swords,
+  FileJson,
 } from 'lucide-react';
 import { getBiomeAt, TileType } from '../utils/worldGenerator';
 import { MiniMap } from './MiniMap';
@@ -56,7 +60,7 @@ interface OpenWorldHUDProps {
   isHost: boolean;
   roomCode: string;
   ping: number;
-  onAction: (action: 'attack' | 'fireball' | 'thunder' | 'potion') => void;
+  onAction: (action: CombatAction) => void;
   onOpenMultiplayer: () => void;
   onOpenInventory: () => void;
   onOpenCharacterCreation: () => void;
@@ -75,6 +79,9 @@ interface OpenWorldHUDProps {
   gamepadName?: string;
   touchControlsEnabled?: boolean;
   onToggleTouchControls?: () => void;
+  onOpenRealmTravel?: () => void;
+  onOpenPvpArena?: () => void;
+  onOpenSaveData?: () => void;
 }
 
 const BIOME_NAMES: Record<BiomeType, { title: string; icon: string; desc: string; color: string }> = {
@@ -117,6 +124,9 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
   gamepadName,
   touchControlsEnabled,
   onToggleTouchControls,
+  onOpenRealmTravel,
+  onOpenPvpArena,
+  onOpenSaveData,
 }) => {
   const [chatInput, setChatInput] = useState('');
   const [activeLogTab, setActiveLogTab] = useState<'all' | 'chat' | 'combat'>('all');
@@ -488,13 +498,65 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
               <User className="w-3.5 h-3.5 text-purple-400" />
             </button>
 
-            {/* Tech Inspector / XML Bestiary */}
+            {/* Tech Inspector & Combat Skill Tree */}
             <button
               onClick={onOpenTechModal}
-              title="Tech Inspector / XML Bestiary / DB (T)"
-              className="p-1.5 bg-slate-900/80 hover:bg-slate-800 border border-slate-700/70 rounded-lg text-slate-300 hover:text-white transition shadow"
+              title={`Tech Console & Combat Skill Tree (T)${(player.skillPoints || 0) > 0 ? ` • ${player.skillPoints} Skill Point Available!` : ''}`}
+              className={`p-1.5 border rounded-lg transition shadow relative cursor-pointer ${
+                (player.skillPoints || 0) > 0
+                  ? 'bg-amber-600/90 border-amber-400 text-white animate-pulse'
+                  : 'bg-slate-900/80 hover:bg-slate-800 border-slate-700/70 text-slate-300'
+              }`}
             >
-              <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+              <Zap className="w-3.5 h-3.5 text-yellow-300" />
+              {(player.skillPoints || 0) > 0 && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 border border-slate-950 animate-ping" />
+              )}
+            </button>
+
+            {/* Unspent Skill Points Quick Button */}
+            {(player.skillPoints || 0) > 0 && (
+              <button
+                onClick={onOpenTechModal}
+                className="px-2 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-500 border border-amber-300 text-white text-[10px] font-bold font-mono animate-bounce flex items-center gap-1 shadow-lg cursor-pointer"
+                title="Level Up! You have unspent skill points to unlock abilities (T)"
+              >
+                <Zap className="w-3 h-3 text-yellow-300" />
+                <span>+{player.skillPoints} SP</span>
+              </button>
+            )}
+
+            {/* Multiverse Realm Gateway (12 Worlds) */}
+            <button
+              onClick={onOpenRealmTravel}
+              title="Multiverse Realm Gateway (12 Worlds)"
+              className="px-2 py-1 bg-amber-950/80 hover:bg-amber-900 border border-amber-500/60 rounded-lg text-amber-300 font-mono text-[11px] font-bold flex items-center gap-1.5 transition shadow cursor-pointer"
+            >
+              <Globe className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">World {player.currentRealmId || 1}/12</span>
+            </button>
+
+            {/* PVP Combat Mode & Arena */}
+            <button
+              onClick={onOpenPvpArena}
+              title="PVP Combat Mode & Gladiator Arena"
+              className={`px-2 py-1 border rounded-lg font-mono text-[11px] font-bold flex items-center gap-1 transition shadow cursor-pointer ${
+                player.pvpEnabled
+                  ? 'bg-red-950/90 border-red-500 text-red-300 animate-pulse'
+                  : 'bg-slate-900/80 hover:bg-slate-800 border-slate-700/70 text-slate-400'
+              }`}
+            >
+              <Swords className={`w-3.5 h-3.5 ${player.pvpEnabled ? 'text-red-400' : 'text-slate-400'}`} />
+              <span className="hidden sm:inline">{player.pvpEnabled ? 'PVP ON' : 'PVP'}</span>
+            </button>
+
+            {/* Save Data Export & Import */}
+            <button
+              onClick={onOpenSaveData}
+              title="Export / Import Save Data (.json)"
+              className="p-1.5 bg-slate-900/80 hover:bg-slate-800 border border-slate-700/70 rounded-lg text-slate-300 hover:text-white transition shadow cursor-pointer"
+            >
+              <FileJson className="w-3.5 h-3.5 text-cyan-400" />
             </button>
 
             {/* CRT Shader Toggle */}
@@ -784,7 +846,7 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
           {/* [4] Potion */}
           <button
             onClick={() => onAction('potion')}
-            className="group relative flex flex-col items-center justify-center w-12 h-12 sm:w-14 sm:h-14 bg-slate-900/90 hover:bg-emerald-950/80 border border-slate-700/80 hover:border-emerald-500/80 rounded-xl text-slate-200 transition active:scale-95 shadow"
+            className="group relative flex flex-col items-center justify-center w-12 h-12 sm:w-14 sm:h-14 bg-slate-900/90 hover:bg-emerald-950/80 border border-slate-700/80 hover:border-emerald-500/80 rounded-xl text-slate-200 transition active:scale-95 shadow cursor-pointer"
             title="Health Potion: +50 HP (Key 4 / Gamepad B)"
           >
             <span className="text-xl sm:text-2xl group-hover:scale-110 transition">🧪</span>
@@ -797,6 +859,116 @@ export const OpenWorldHUD: React.FC<OpenWorldHUDProps> = ({
             </div>
             <span className="absolute bottom-0.5 text-[8px] text-emerald-400 font-mono">+50h</span>
           </button>
+
+          {/* [5] Whirlwind (Active AOE Skill) */}
+          {(player.unlockedSkills?.whirlwind || 0) > 0 && (
+            <button
+              onClick={() => onAction('whirlwind')}
+              disabled={
+                player.mana <
+                (player.unlockedSkills?.whirlwind === 3 ? 26 : player.unlockedSkills?.whirlwind === 2 ? 22 : 18)
+              }
+              className={`group relative flex flex-col items-center justify-center w-12 h-12 sm:w-14 sm:h-14 bg-slate-900/90 border rounded-xl text-slate-200 transition active:scale-95 shadow cursor-pointer ${
+                player.mana >=
+                (player.unlockedSkills?.whirlwind === 3 ? 26 : player.unlockedSkills?.whirlwind === 2 ? 22 : 18)
+                  ? 'hover:bg-amber-950/80 border-amber-500/80'
+                  : 'opacity-40 border-slate-800 cursor-not-allowed'
+              }`}
+              title={`Whirlwind Rank ${player.unlockedSkills?.whirlwind} (Key 5)`}
+            >
+              <span className="text-xl sm:text-2xl group-hover:rotate-180 transition-transform duration-500">
+                🌪️
+              </span>
+              <span className="text-[9px] font-bold mt-0.5 leading-none">Whirl</span>
+              <div className="absolute top-1 left-1.5 flex items-center gap-0.5">
+                <span className="text-[8px] font-mono text-amber-400 font-black">[5]</span>
+              </div>
+              <span className="absolute bottom-0.5 text-[8px] text-cyan-400 font-mono">
+                {player.unlockedSkills?.whirlwind === 3 ? '26m' : player.unlockedSkills?.whirlwind === 2 ? '22m' : '18m'}
+              </span>
+            </button>
+          )}
+
+          {/* [6] Frost Nova (Active Freeze AOE Skill) */}
+          {(player.unlockedSkills?.frost_nova || 0) > 0 && (
+            <button
+              onClick={() => onAction('frost_nova')}
+              disabled={
+                player.mana <
+                (player.unlockedSkills?.frost_nova === 3 ? 30 : player.unlockedSkills?.frost_nova === 2 ? 26 : 22)
+              }
+              className={`group relative flex flex-col items-center justify-center w-12 h-12 sm:w-14 sm:h-14 bg-slate-900/90 border rounded-xl text-slate-200 transition active:scale-95 shadow cursor-pointer ${
+                player.mana >=
+                (player.unlockedSkills?.frost_nova === 3 ? 30 : player.unlockedSkills?.frost_nova === 2 ? 26 : 22)
+                  ? 'hover:bg-cyan-950/80 border-cyan-500/80'
+                  : 'opacity-40 border-slate-800 cursor-not-allowed'
+              }`}
+              title={`Frost Nova Rank ${player.unlockedSkills?.frost_nova} (Key 6)`}
+            >
+              <span className="text-xl sm:text-2xl group-hover:scale-110 transition">❄️</span>
+              <span className="text-[9px] font-bold mt-0.5 leading-none">Nova</span>
+              <div className="absolute top-1 left-1.5 flex items-center gap-0.5">
+                <span className="text-[8px] font-mono text-cyan-400 font-black">[6]</span>
+              </div>
+              <span className="absolute bottom-0.5 text-[8px] text-cyan-400 font-mono">
+                {player.unlockedSkills?.frost_nova === 3 ? '30m' : player.unlockedSkills?.frost_nova === 2 ? '26m' : '22m'}
+              </span>
+            </button>
+          )}
+
+          {/* [7] Thunder Smite (Chain Lightning Skill) */}
+          {(player.unlockedSkills?.thunder_smite || 0) > 0 && (
+            <button
+              onClick={() => onAction('thunder_smite')}
+              disabled={
+                player.mana <
+                (player.unlockedSkills?.thunder_smite === 3 ? 35 : player.unlockedSkills?.thunder_smite === 2 ? 30 : 25)
+              }
+              className={`group relative flex flex-col items-center justify-center w-12 h-12 sm:w-14 sm:h-14 bg-slate-900/90 border rounded-xl text-slate-200 transition active:scale-95 shadow cursor-pointer ${
+                player.mana >=
+                (player.unlockedSkills?.thunder_smite === 3 ? 35 : player.unlockedSkills?.thunder_smite === 2 ? 30 : 25)
+                  ? 'hover:bg-yellow-950/80 border-yellow-500/80'
+                  : 'opacity-40 border-slate-800 cursor-not-allowed'
+              }`}
+              title={`Thunder Smite Rank ${player.unlockedSkills?.thunder_smite} (Key 7)`}
+            >
+              <span className="text-xl sm:text-2xl group-hover:scale-110 transition">⚡</span>
+              <span className="text-[9px] font-bold mt-0.5 leading-none">Smite</span>
+              <div className="absolute top-1 left-1.5 flex items-center gap-0.5">
+                <span className="text-[8px] font-mono text-yellow-400 font-black">[7]</span>
+              </div>
+              <span className="absolute bottom-0.5 text-[8px] text-cyan-400 font-mono">
+                {player.unlockedSkills?.thunder_smite === 3 ? '35m' : player.unlockedSkills?.thunder_smite === 2 ? '30m' : '25m'}
+              </span>
+            </button>
+          )}
+
+          {/* [8] Iron Bastion (Divine Aegis Buff) */}
+          {(player.unlockedSkills?.iron_bastion || 0) > 0 && (
+            <button
+              onClick={() => onAction('iron_bastion')}
+              disabled={
+                player.mana <
+                (player.unlockedSkills?.iron_bastion === 3 ? 28 : player.unlockedSkills?.iron_bastion === 2 ? 24 : 20)
+              }
+              className={`group relative flex flex-col items-center justify-center w-12 h-12 sm:w-14 sm:h-14 bg-slate-900/90 border rounded-xl text-slate-200 transition active:scale-95 shadow cursor-pointer ${
+                player.mana >=
+                (player.unlockedSkills?.iron_bastion === 3 ? 28 : player.unlockedSkills?.iron_bastion === 2 ? 24 : 20)
+                  ? 'hover:bg-emerald-950/80 border-emerald-500/80'
+                  : 'opacity-40 border-slate-800 cursor-not-allowed'
+              }`}
+              title={`Iron Bastion Rank ${player.unlockedSkills?.iron_bastion} (Key 8)`}
+            >
+              <span className="text-xl sm:text-2xl group-hover:scale-110 transition">🛡️</span>
+              <span className="text-[9px] font-bold mt-0.5 leading-none">Aegis</span>
+              <div className="absolute top-1 left-1.5 flex items-center gap-0.5">
+                <span className="text-[8px] font-mono text-emerald-400 font-black">[8]</span>
+              </div>
+              <span className="absolute bottom-0.5 text-[8px] text-cyan-400 font-mono">
+                {player.unlockedSkills?.iron_bastion === 3 ? '28m' : player.unlockedSkills?.iron_bastion === 2 ? '24m' : '20m'}
+              </span>
+            </button>
+          )}
 
           {/* Contextual Interact [E] button */}
           {nearbyObject && (

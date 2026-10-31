@@ -20,6 +20,9 @@ import { InventoryModal } from './components/InventoryModal';
 import { WorldNPCModal } from './components/WorldNPCModal';
 import { TouchControls } from './components/TouchControls';
 import { QuestLogModal } from './components/QuestLogModal';
+import { RealmTravelModal } from './components/RealmTravelModal';
+import { PvpArenaModal, GladiatorChampion } from './components/PvpArenaModal';
+import { SaveDataModal } from './components/SaveDataModal';
 import { useGamepad } from './hooks/useGamepad';
 import {
   Player,
@@ -38,15 +41,19 @@ import {
   Quest,
   QuestObjective,
   EquipmentSlot,
+  CombatAction,
 } from './types/rpg';
 import {
   generateOpenWorld,
+  generateRealmWorld,
   isTileCollidable,
   spawnOpenWorldMonsters,
+  spawnRealmMonsters,
   TILE_SIZE,
   WORLD_WIDTH,
   WORLD_HEIGHT,
   getBiomeAt,
+  WorldMapData,
 } from './utils/worldGenerator';
 import { parseBestiaryXML } from './utils/xmlParser';
 import { calculateCombatAction } from './utils/combatEngine';
@@ -59,8 +66,14 @@ import {
   loadSavedInventory,
   saveInventoryToStorage,
 } from './utils/storage';
-import { revealFogOfWar } from './utils/fogOfWar';
+import { revealFogOfWar, getInitialExploredTiles } from './utils/fogOfWar';
+import { getRealmById, getPvPRank } from './utils/realmsData';
 import { equipItemToPlayer, unequipItemFromPlayer } from './utils/equipment';
+import {
+  unlockOrUpgradeSkill,
+  respecSkillPoints,
+  getSkillRankInfo,
+} from './utils/skillData';
 import { lanMultiplayer } from './services/lanMultiplayer';
 
 export default function App() {
@@ -69,8 +82,11 @@ export default function App() {
   const playerRef = useRef<Player>(player);
   playerRef.current = player;
 
-  // World Data
-  const [worldMap] = useState(() => generateOpenWorld());
+  // World Data & Realm System (1 of 12 Worlds)
+  const [currentRealmId, setCurrentRealmId] = useState<number>(() => player.currentRealmId || 1);
+  const [worldMap, setWorldMap] = useState<WorldMapData>(() =>
+    generateRealmWorld(player.currentRealmId || 1)
+  );
   const [objects, setObjects] = useState<WorldObject[]>(() =>
     loadSavedWorldObjects(worldMap.objects)
   );
@@ -103,6 +119,9 @@ export default function App() {
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
   const [isQuestLogOpen, setIsQuestLogOpen] = useState(false);
+  const [isRealmTravelOpen, setIsRealmTravelOpen] = useState(false);
+  const [isPvpArenaOpen, setIsPvpArenaOpen] = useState(false);
+  const [isSaveDataOpen, setIsSaveDataOpen] = useState(false);
   const [activeNpcObject, setActiveNpcObject] = useState<WorldObject | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [crtEnabled, setCrtEnabled] = useState(true);
@@ -253,6 +272,7 @@ export default function App() {
       let nextHp = cur.hp;
       let nextMaxMana = cur.maxMana;
       let nextMana = cur.mana;
+      let nextSkillPoints = cur.skillPoints ?? 0;
       const didLevelUp = nextXp >= nextLevel * 100;
 
       if (didLevelUp) {
@@ -261,8 +281,9 @@ export default function App() {
         nextHp = nextMaxHp;
         nextMaxMana += 15;
         nextMana = nextMaxMana;
-        spawnFloatingText(`⭐ LEVEL UP! (Lv.${nextLevel})`, cur.x, cur.y, 'level');
-        addLog(`⭐ LEVEL UP! ${cur.name} advanced to Level ${nextLevel}! Attributes surged.`, 'heal');
+        nextSkillPoints += 1;
+        spawnFloatingText(`⭐ LEVEL UP! (Lv.${nextLevel}) +1 SP`, cur.x, cur.y, 'level');
+        addLog(`⭐ LEVEL UP! ${cur.name} advanced to Level ${nextLevel}! Attributes surged and +1 Skill Point earned!`, 'heal');
       }
 
       // Mark quest as claimed
@@ -282,6 +303,7 @@ export default function App() {
         maxHp: nextMaxHp,
         mana: nextMana,
         maxMana: nextMaxMana,
+        skillPoints: nextSkillPoints,
         quests: updatedQuests,
         activeQuestId: nextActive ? nextActive.id : cur.activeQuestId,
         completedQuestIds: [...(cur.completedQuestIds || []), questId],
@@ -308,7 +330,7 @@ export default function App() {
       const xmlText = await res.text();
       const parsed = parseBestiaryXML(xmlText);
       setBestiary(parsed);
-      const spawned = spawnOpenWorldMonsters(parsed);
+      const spawned = spawnRealmMonsters(playerRef.current.currentRealmId || 1, parsed);
       setMobs(spawned);
       addLog(`Loaded ${parsed.length} monster archetypes from enemies.xml via DOMParser.`, 'info');
     } catch (err: any) {
@@ -363,6 +385,59 @@ export default function App() {
             return localMob;
           })
         );
+      } else if (msg.type === 'PVP_ATTACK') {
+        const { targetPeerId, damage, attackerName, actionName } = msg.payload;
+        if (targetPeerId === lanMultiplayer.getPeerId()) {
+          sound.playEnemyHit();
+          triggerRumbleRef.current(180, 0.7, 0.8);
+          spawnFloatingText(`-${damage} PVP`, playerRef.current.x, playerRef.current.y, 'damage');
+          addLog(`⚔️ ${attackerName} assaulted you with [${actionName.toUpperCase()}] for ${damage} DMG!`, 'enemy_atk');
+
+          setPlayer((p) => {
+            const nextHp = Math.max(0, p.hp - damage);
+            if (nextHp <= 0) {
+              sound.playDefeat();
+              lanMultiplayer.sendPvpKill(lanMultiplayer.getPeerId(), p.name, attackerName);
+              const currentRealm = getRealmById(p.currentRealmId || 1);
+              spawnFloatingText('💀 PVP CASUALTY', p.x, p.y, 'damage');
+              addLog(`💀 You were slain by ${attackerName} in PVP! Respawning at ${currentRealm.town.name}...`, 'defeat');
+              const respawned: Player = {
+                ...p,
+                hp: p.maxHp,
+                mana: p.maxMana,
+                x: currentRealm.town.spawnX,
+                y: currentRealm.town.spawnY,
+                pvpDeaths: (p.pvpDeaths || 0) + 1,
+              };
+              playerRef.current = respawned;
+              savePlayerToStorage(respawned);
+              return respawned;
+            }
+            return { ...p, hp: nextHp };
+          });
+        }
+      } else if (msg.type === 'PVP_KILL') {
+        const { victimName, killerName } = msg.payload;
+        sound.playCrit();
+        addLog(`⚔️ [PVP] ${killerName} defeated ${victimName} in honorable combat!`, 'victory');
+        if (killerName === playerRef.current.name) {
+          sound.playVictory();
+          setPlayer((p) => {
+            const nextHonor = (p.pvpHonor || 0) + 50;
+            const nextKills = (p.pvpKills || 0) + 1;
+            const rank = getPvPRank(nextHonor);
+            const updated: Player = {
+              ...p,
+              pvpKills: nextKills,
+              pvpHonor: nextHonor,
+              pvpRank: rank.title,
+            };
+            playerRef.current = updated;
+            savePlayerToStorage(updated);
+            spawnFloatingText(`⭐ PVP KILL! +50 HONOR (${rank.title})`, p.x, p.y, 'level');
+            return updated;
+          });
+        }
       }
     });
 
@@ -370,7 +445,7 @@ export default function App() {
       unsubscribe();
       lanMultiplayer.disconnect();
     };
-  }, [loadBestiaryFromXml, addLog]);
+  }, [loadBestiaryFromXml, addLog, spawnFloatingText]);
 
   // 3. Heartbeat loop to broadcast player presence to LAN peers
   useEffect(() => {
@@ -390,6 +465,8 @@ export default function App() {
         mana: p.mana,
         maxMana: p.maxMana,
         level: p.level,
+        realmId: p.currentRealmId || 1,
+        pvpEnabled: Boolean(p.pvpEnabled),
       });
 
       setPeers(lanMultiplayer.getPeers());
@@ -412,6 +489,179 @@ export default function App() {
       saveWorldObjectsState(objects);
     },
     [objects]
+  );
+
+  // Realm Travel Handler (Teleport between the 12 Worlds)
+  const handleTravelToRealm = useCallback(
+    (newRealmId: number) => {
+      const realmDef = getRealmById(newRealmId);
+      const newMap = generateRealmWorld(newRealmId);
+      setWorldMap(newMap);
+      setObjects(loadSavedWorldObjects(newMap.objects));
+      setCurrentRealmId(newRealmId);
+
+      if (bestiary.length > 0) {
+        setMobs(spawnRealmMonsters(newRealmId, bestiary));
+      }
+      setTargetEnemy(null);
+
+      const cur = playerRef.current;
+      const discovered = Array.from(new Set([...(cur.discoveredRealms || [1]), newRealmId]));
+
+      // Save previous realm explored fog
+      const realmFogMap = { ...(cur.realmExploredTiles || {}) };
+      realmFogMap[cur.currentRealmId || 1] = cur.exploredTiles || [];
+
+      // Load or initialize fog of war for the new realm
+      const newRealmExplored =
+        realmFogMap[newRealmId] ||
+        getInitialExploredTiles(realmDef.town.spawnX, realmDef.town.spawnY, 8);
+      realmFogMap[newRealmId] = newRealmExplored;
+
+      const updatedHero: Player = {
+        ...cur,
+        currentRealmId: newRealmId,
+        discoveredRealms: discovered,
+        realmExploredTiles: realmFogMap,
+        exploredTiles: newRealmExplored,
+        x: realmDef.town.spawnX,
+        y: realmDef.town.spawnY,
+      };
+
+      setPlayer(updatedHero);
+      playerRef.current = updatedHero;
+      saveState(updatedHero);
+
+      sound.playVictory();
+      spawnFloatingText(
+        `🌌 TRANSFERRED TO ${realmDef.name.toUpperCase()}`,
+        realmDef.town.spawnX,
+        realmDef.town.spawnY,
+        'level'
+      );
+      addLog(
+        `🌌 Activated the Ancient Realm Gateway! Arrived in [${realmDef.name}] at ${realmDef.town.name}.`,
+        'victory'
+      );
+    },
+    [bestiary, saveState, spawnFloatingText, addLog]
+  );
+
+  // Toggle PVP Mode
+  const handleTogglePvp = useCallback(
+    (enabled: boolean) => {
+      sound.playClick();
+      const updatedHero: Player = {
+        ...playerRef.current,
+        pvpEnabled: enabled,
+      };
+      setPlayer(updatedHero);
+      playerRef.current = updatedHero;
+      saveState(updatedHero);
+
+      if (enabled) {
+        sound.playSlash();
+        spawnFloatingText('⚔️ PVP MODE ENGAGED', updatedHero.x, updatedHero.y, 'crit');
+        addLog(
+          '⚔️ Flagged for PVP Combat! Spells and attacks can now strike other PVP-flagged players.',
+          'victory'
+        );
+      } else {
+        spawnFloatingText('🕊️ PEACEFUL STANCE', updatedHero.x, updatedHero.y, 'heal');
+        addLog('🕊️ PVP Disabled. You are now protected in peaceful exploration mode.', 'info');
+      }
+    },
+    [saveState, spawnFloatingText, addLog]
+  );
+
+  // Colosseum Gladiator Duels (Solo/Practice)
+  const handleStartGladiatorDuel = useCallback(
+    (champ: GladiatorChampion) => {
+      const cur = playerRef.current;
+      sound.playSlash();
+      addLog(`⚔️ Entering Colosseum Duel against ${champ.name} (${champ.title})!`, 'player_atk');
+
+      const playerPower = cur.level * 10 + cur.maxHp / 5 + (cur.equipped?.weapon?.power || 14);
+      const champPower = champ.level * 9 + champ.hp / 6 + champ.atk;
+
+      const victoryChance = Math.min(0.95, Math.max(0.15, playerPower / (playerPower + champPower)));
+      const won = Math.random() < victoryChance;
+
+      setTimeout(() => {
+        if (won) {
+          sound.playVictory();
+          triggerRumbleRef.current(200, 0.8, 0.9);
+          const honorGained = champ.honorReward;
+          const goldGained = champ.goldReward;
+          const nextHonor = (cur.pvpHonor || 0) + honorGained;
+          const nextKills = (cur.pvpKills || 0) + 1;
+          const nextGold = cur.gold + goldGained;
+          const rank = getPvPRank(nextHonor);
+
+          const updated: Player = {
+            ...cur,
+            gold: nextGold,
+            pvpKills: nextKills,
+            pvpHonor: nextHonor,
+            pvpRank: rank.title,
+          };
+          setPlayer(updated);
+          playerRef.current = updated;
+          saveState(updated);
+
+          spawnFloatingText(`🏆 ARENA VICTORY! +${honorGained} Honor`, cur.x, cur.y, 'level');
+          addLog(
+            `🏆 ARENA VICTORY! You vanquished ${champ.name}! Awarded +${honorGained} Honor Points and +${goldGained} Gold! Rank: ${rank.title}.`,
+            'victory'
+          );
+        } else {
+          sound.playDefeat();
+          triggerRumbleRef.current(180, 0.6, 0.6);
+          const dmgTaken = Math.min(cur.hp - 1, Math.round(champ.atk * 1.5));
+          const nextDeaths = (cur.pvpDeaths || 0) + 1;
+          const updated: Player = {
+            ...cur,
+            hp: Math.max(1, cur.hp - dmgTaken),
+            pvpDeaths: nextDeaths,
+          };
+          setPlayer(updated);
+          playerRef.current = updated;
+          saveState(updated);
+          spawnFloatingText(`DEFEAT in Arena! -${dmgTaken} HP`, cur.x, cur.y, 'damage');
+          addLog(
+            `💀 ${champ.name} countered with [${champ.specialMove}]! Rest at the hearth to recover.`,
+            'defeat'
+          );
+        }
+      }, 500);
+    },
+    [addLog, saveState, spawnFloatingText]
+  );
+
+  // Import Save Data
+  const handleImportSave = useCallback(
+    (
+      importedPlayer: Player,
+      importedInventory: InventoryItem[],
+      importedObjects: WorldObject[]
+    ) => {
+      setPlayer(importedPlayer);
+      playerRef.current = importedPlayer;
+      const rId = importedPlayer.currentRealmId || 1;
+      setCurrentRealmId(rId);
+      const newMap = generateRealmWorld(rId);
+      setWorldMap(newMap);
+      setObjects(importedObjects && importedObjects.length > 0 ? importedObjects : newMap.objects);
+      if (bestiary.length > 0) {
+        setMobs(spawnRealmMonsters(rId, bestiary));
+      }
+      setIsSaveDataOpen(false);
+      addLog(
+        `💾 Successfully loaded save state for ${importedPlayer.name} (Lv.${importedPlayer.level} ${importedPlayer.class})!`,
+        'victory'
+      );
+    },
+    [bestiary, addLog]
   );
 
   // 5. Player Movement Handler
@@ -512,13 +762,383 @@ export default function App() {
     [worldMap.tiles, objects, spawnFloatingText, addLog]
   );
 
-  // 6. Combat Execution (Melee Strike, Spells, Potions)
+  // Skill Unlock & Upgrade Handlers for Tech Inspector
+  const handleUnlockOrUpgradeSkill = useCallback(
+    (skillId: string) => {
+      const result = unlockOrUpgradeSkill(playerRef.current, skillId);
+      if (result.success) {
+        sound.playVictory();
+        setPlayer(result.updatedPlayer);
+        playerRef.current = result.updatedPlayer;
+        saveState(result.updatedPlayer);
+        spawnFloatingText(result.message, result.updatedPlayer.x, result.updatedPlayer.y, 'level');
+        addLog(result.message, 'victory');
+      } else {
+        sound.playEnemyHit();
+        addLog(`Cannot unlock or upgrade: ${result.message}`, 'enemy_atk');
+      }
+    },
+    [addLog, saveState, spawnFloatingText]
+  );
+
+  const handleRespecSkills = useCallback(() => {
+    const result = respecSkillPoints(playerRef.current);
+    if (result.refundedPoints > 0) {
+      sound.playPotion();
+      setPlayer(result.updatedPlayer);
+      playerRef.current = result.updatedPlayer;
+      saveState(result.updatedPlayer);
+      spawnFloatingText(`Reset Skills: +${result.refundedPoints} SP`, result.updatedPlayer.x, result.updatedPlayer.y, 'heal');
+      addLog(`Re-specced all combat abilities. Refunded ${result.refundedPoints} Skill Points!`, 'heal');
+    } else {
+      addLog('No allocated skill points to refund.', 'info');
+    }
+  }, [addLog, saveState, spawnFloatingText]);
+
+  // 6. Combat Execution (Melee Strike, Spells, Potions, Unlocked Active Skills)
   const handleCombatAction = useCallback(
-    (action: 'attack' | 'fireball' | 'thunder' | 'potion') => {
+    (action: CombatAction) => {
       const cur = playerRef.current;
       if (cur.hp <= 0) return;
 
-      // Find nearest enemy in front/range
+      // Restorative Potion
+      if (action === 'potion') {
+        sound.playPotion();
+        const healedHp = Math.min(cur.maxHp, cur.hp + 50);
+        setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
+        const updated = { ...cur, hp: healedHp };
+        setPlayer(updated);
+        saveState(updated);
+        spawnFloatingText('+50 HP', cur.x, cur.y, 'heal');
+        addLog('Quaffed Crimson Potion! Restored +50 HP and cured poison.', 'heal');
+        return;
+      }
+
+      // Iron Bastion: Divine Fortification & Cleansing (Self-Cast Buff)
+      if (action === 'iron_bastion') {
+        const rankLevel = cur.unlockedSkills?.iron_bastion || 0;
+        if (rankLevel <= 0) {
+          addLog('Iron Bastion is locked! Allocate Skill Points in Tech Inspector [T].', 'info');
+          return;
+        }
+        const rankInfo = getSkillRankInfo('iron_bastion', rankLevel);
+        const manaCost = rankInfo?.manaCost ?? 20;
+        if (cur.mana < manaCost) {
+          spawnFloatingText('LOW MANA', cur.x, cur.y, 'damage');
+          addLog(`Not enough Mana for Iron Bastion (${manaCost} MP required)!`, 'enemy_atk');
+          return;
+        }
+
+        sound.playPotion();
+        triggerRumbleRef.current(150, 0.5, 0.8);
+        const healVal = rankLevel === 3 ? 90 : rankLevel === 2 ? 55 : 30;
+        const nextHp = Math.min(cur.maxHp, cur.hp + healVal);
+        const nextMana = Math.max(0, cur.mana - manaCost);
+        setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
+        const updatedHero: Player = { ...cur, hp: nextHp, mana: nextMana };
+        setPlayer(updatedHero);
+        playerRef.current = updatedHero;
+        saveState(updatedHero);
+        spawnFloatingText(`🛡️ BASTION +${healVal} HP`, cur.x, cur.y, 'heal');
+        addLog(
+          `🛡️ Cast Iron Bastion (Rank ${rankLevel})! Restored +${healVal} HP, purged toxic afflictions, and bolstered defenses!`,
+          'heal'
+        );
+        return;
+      }
+
+      // Check for PVP strikes against nearby LAN peers
+      if (cur.pvpEnabled && peers.length > 0) {
+        const hostilePeers = peers.filter(
+          (p) =>
+            p.pvpEnabled &&
+            (p.realmId || 1) === (cur.currentRealmId || 1) &&
+            Math.hypot(p.x - (cur.x ?? 20), p.y - (cur.y ?? 22)) <= (action === 'attack' ? 3.0 : 6.0)
+        );
+
+        if (hostilePeers.length > 0) {
+          const victim = hostilePeers[0];
+          const atkBonus = cur.equipped?.weapon?.power || 14;
+          const pvpDmg = Math.max(16, Math.round(cur.level * 8 + atkBonus + Math.random() * 10));
+          lanMultiplayer.sendPvpAttack(victim.id, pvpDmg, cur.name, action);
+          spawnFloatingText(`-${pvpDmg} PVP`, victim.x, victim.y, 'crit');
+          addLog(`⚔️ [PVP] You landed [${action.toUpperCase()}] on ${victim.name} for ${pvpDmg} DMG!`, 'player_atk');
+        }
+      }
+
+      // Whirlwind: 360° Cleaving Melee Strike (AOE)
+      if (action === 'whirlwind') {
+        const rankLevel = cur.unlockedSkills?.whirlwind || 0;
+        if (rankLevel <= 0) {
+          addLog('Whirlwind is locked! Allocate Skill Points in Tech Inspector [T].', 'info');
+          return;
+        }
+        const rankInfo = getSkillRankInfo('whirlwind', rankLevel);
+        const manaCost = rankInfo?.manaCost ?? 18;
+        if (cur.mana < manaCost) {
+          spawnFloatingText('LOW MANA', cur.x, cur.y, 'damage');
+          addLog(`Not enough Mana for Whirlwind (${manaCost} MP required)!`, 'enemy_atk');
+          return;
+        }
+
+        sound.playSlash();
+        triggerRumbleRef.current(180, 0.7, 0.8);
+        spawnFloatingText('🌪️ WHIRLWIND!', cur.x, cur.y, 'crit');
+
+        const aoeRadius = 3.8;
+        const nearbyMobs = mobsRef.current.filter(
+          (m) => m.hp > 0 && Math.hypot(m.x - (cur.x ?? 18), m.y - (cur.y ?? 19)) <= aoeRadius
+        );
+
+        const nextMana = Math.max(0, cur.mana - manaCost);
+        if (nearbyMobs.length === 0) {
+          addLog(`🌪️ Whirlwind sliced a full 360° circle! No beasts were within ${aoeRadius} tiles.`, 'info');
+          const updatedHero: Player = { ...cur, mana: nextMana };
+          setPlayer(updatedHero);
+          saveState(updatedHero);
+          return;
+        }
+
+        let totalXpGained = 0;
+        let totalGoldGained = 0;
+        let anyKilled = false;
+        let lastKilledName = '';
+        const defeatedMobIds: string[] = [];
+
+        setMobs((prev) =>
+          prev.map((m) => {
+            const inRange = nearbyMobs.find((n) => n.instanceId === m.instanceId);
+            if (!inRange) return m;
+
+            const res = calculateCombatAction({ action: 'whirlwind', player: cur, monster: m });
+            spawnFloatingText(`-${res.damageDealt}`, m.x, m.y, res.critical ? 'crit' : 'damage');
+            lanMultiplayer.notifyMobHit(m.instanceId, res.damageDealt, cur.name);
+
+            if (res.enemyHp <= 0) {
+              anyKilled = true;
+              lastKilledName = m.name;
+              defeatedMobIds.push(m.id);
+              totalGoldGained += m.gold || 30;
+              totalXpGained += m.expReward || 40;
+              const respawnDuration = m.id === 'dragon' ? 35000 : 18000;
+              return {
+                ...m,
+                hp: 0,
+                deadAt: Date.now(),
+                respawnAt: Date.now() + respawnDuration,
+              };
+            }
+
+            return { ...m, hp: res.enemyHp };
+          })
+        );
+
+        if (defeatedMobIds.length > 0) {
+          defeatedMobIds.forEach((mId) => {
+            updateQuestProgress((obj) => {
+              if (obj.type === 'kill' && obj.targetId === mId) return true;
+              if (obj.type === 'kill_group' && obj.targetGroup?.includes(mId)) return true;
+              return false;
+            });
+          });
+        }
+
+        const nextXp = cur.xp + totalXpGained;
+        const nextGold = cur.gold + totalGoldGained;
+        let nextLevel = cur.level;
+        let nextMaxHp = cur.maxHp;
+        let nextMaxMana = cur.maxMana;
+        let nextHp = cur.hp;
+        let nextSkillPoints = cur.skillPoints ?? 0;
+        const didLevelUp = nextXp >= nextLevel * 100;
+
+        if (didLevelUp) {
+          nextLevel += 1;
+          nextMaxHp += 25;
+          nextHp = nextMaxHp;
+          nextMaxMana += 15;
+          nextSkillPoints += 1;
+          spawnFloatingText(`⭐ LEVEL UP! (Lv.${nextLevel}) +1 SP`, cur.x, cur.y, 'level');
+          addLog(`⭐ LEVEL UP! ${cur.name} advanced to Level ${nextLevel}! Attributes surged and +1 Skill Point earned!`, 'heal');
+        }
+
+        if (anyKilled) {
+          sound.playVictory();
+          setRewardPreview({
+            id: Math.random().toString(36).substring(2, 9),
+            gold: totalGoldGained,
+            xp: totalXpGained,
+            monsterName: lastKilledName,
+            isLevelUp: didLevelUp,
+            newLevel: didLevelUp ? nextLevel : undefined,
+          });
+          setTimeout(() => setRewardPreview(null), 2500);
+        }
+
+        addLog(`🌪️ Whirlwind cleaves ${nearbyMobs.length} nearby monsters for martial damage! (${nextMana} MP remaining)`, 'crit');
+
+        const updatedHero: Player = {
+          ...cur,
+          hp: nextHp,
+          maxHp: nextMaxHp,
+          mana: nextMana,
+          maxMana: nextMaxMana,
+          gold: nextGold,
+          xp: nextXp,
+          level: nextLevel,
+          wins: cur.wins + (anyKilled ? 1 : 0),
+          skillPoints: nextSkillPoints,
+        };
+        setPlayer(updatedHero);
+        saveState(updatedHero);
+        return;
+      }
+
+      // Frost Nova: Radial Blizzard & Chill (AOE)
+      if (action === 'frost_nova') {
+        const rankLevel = cur.unlockedSkills?.frost_nova || 0;
+        if (rankLevel <= 0) {
+          addLog('Frost Nova is locked! Allocate Skill Points in Tech Inspector [T].', 'info');
+          return;
+        }
+        const rankInfo = getSkillRankInfo('frost_nova', rankLevel);
+        const manaCost = rankInfo?.manaCost ?? 22;
+        if (cur.mana < manaCost) {
+          spawnFloatingText('LOW MANA', cur.x, cur.y, 'damage');
+          addLog(`Not enough Mana for Frost Nova (${manaCost} MP required)!`, 'enemy_atk');
+          return;
+        }
+
+        sound.playThunder();
+        triggerRumbleRef.current(170, 0.6, 0.9);
+        spawnFloatingText('❄️ FROST NOVA!', cur.x, cur.y, 'crit');
+
+        const aoeRadius = 4.5;
+        const nearbyMobs = mobsRef.current.filter(
+          (m) => m.hp > 0 && Math.hypot(m.x - (cur.x ?? 18), m.y - (cur.y ?? 19)) <= aoeRadius
+        );
+
+        const nextMana = Math.max(0, cur.mana - manaCost);
+        if (nearbyMobs.length === 0) {
+          addLog(`❄️ Frost Nova unleashed a sub-zero vortex! No monsters within ${aoeRadius} tiles.`, 'info');
+          const updatedHero: Player = { ...cur, mana: nextMana };
+          setPlayer(updatedHero);
+          saveState(updatedHero);
+          return;
+        }
+
+        let totalXpGained = 0;
+        let totalGoldGained = 0;
+        let anyKilled = false;
+        let lastKilledName = '';
+        const defeatedMobIds: string[] = [];
+
+        setMobs((prev) =>
+          prev.map((m) => {
+            const inRange = nearbyMobs.find((n) => n.instanceId === m.instanceId);
+            if (!inRange) return m;
+
+            const res = calculateCombatAction({ action: 'frost_nova', player: cur, monster: m });
+            spawnFloatingText(`-${res.damageDealt} FROST`, m.x, m.y, 'crit');
+            lanMultiplayer.notifyMobHit(m.instanceId, res.damageDealt, cur.name);
+
+            if (res.enemyHp <= 0) {
+              anyKilled = true;
+              lastKilledName = m.name;
+              defeatedMobIds.push(m.id);
+              totalGoldGained += m.gold || 30;
+              totalXpGained += m.expReward || 40;
+              const respawnDuration = m.id === 'dragon' ? 35000 : 18000;
+              return {
+                ...m,
+                hp: 0,
+                deadAt: Date.now(),
+                respawnAt: Date.now() + respawnDuration,
+              };
+            }
+
+            return { ...m, hp: res.enemyHp };
+          })
+        );
+
+        if (defeatedMobIds.length > 0) {
+          defeatedMobIds.forEach((mId) => {
+            updateQuestProgress((obj) => {
+              if (obj.type === 'kill' && obj.targetId === mId) return true;
+              if (obj.type === 'kill_group' && obj.targetGroup?.includes(mId)) return true;
+              return false;
+            });
+          });
+        }
+
+        const nextXp = cur.xp + totalXpGained;
+        const nextGold = cur.gold + totalGoldGained;
+        let nextLevel = cur.level;
+        let nextMaxHp = cur.maxHp;
+        let nextMaxMana = cur.maxMana;
+        let nextHp = cur.hp;
+        let nextSkillPoints = cur.skillPoints ?? 0;
+        const didLevelUp = nextXp >= nextLevel * 100;
+
+        if (didLevelUp) {
+          nextLevel += 1;
+          nextMaxHp += 25;
+          nextHp = nextMaxHp;
+          nextMaxMana += 15;
+          nextSkillPoints += 1;
+          spawnFloatingText(`⭐ LEVEL UP! (Lv.${nextLevel}) +1 SP`, cur.x, cur.y, 'level');
+          addLog(`⭐ LEVEL UP! ${cur.name} advanced to Level ${nextLevel}! Attributes surged and +1 Skill Point earned!`, 'heal');
+        }
+
+        if (anyKilled) {
+          sound.playVictory();
+          setRewardPreview({
+            id: Math.random().toString(36).substring(2, 9),
+            gold: totalGoldGained,
+            xp: totalXpGained,
+            monsterName: lastKilledName,
+            isLevelUp: didLevelUp,
+            newLevel: didLevelUp ? nextLevel : undefined,
+          });
+          setTimeout(() => setRewardPreview(null), 2500);
+        }
+
+        addLog(`❄️ Frost Nova flash-froze ${nearbyMobs.length} enemies in glacial ice! (${nextMana} MP remaining)`, 'crit');
+
+        const updatedHero: Player = {
+          ...cur,
+          hp: nextHp,
+          maxHp: nextMaxHp,
+          mana: nextMana,
+          maxMana: nextMaxMana,
+          gold: nextGold,
+          xp: nextXp,
+          level: nextLevel,
+          wins: cur.wins + (anyKilled ? 1 : 0),
+          skillPoints: nextSkillPoints,
+        };
+        setPlayer(updatedHero);
+        saveState(updatedHero);
+        return;
+      }
+
+      // Check unlock status for targeted skills (Thunder Smite)
+      if (action === 'thunder_smite') {
+        const rankLevel = cur.unlockedSkills?.thunder_smite || 0;
+        if (rankLevel <= 0) {
+          addLog('Thunder Smite is locked! Allocate Skill Points in Tech Inspector [T].', 'info');
+          return;
+        }
+        const rankInfo = getSkillRankInfo('thunder_smite', rankLevel);
+        const manaCost = rankInfo?.manaCost ?? 25;
+        if (cur.mana < manaCost) {
+          spawnFloatingText('LOW MANA', cur.x, cur.y, 'damage');
+          addLog(`Not enough Mana for Thunder Smite (${manaCost} MP required)!`, 'enemy_atk');
+          return;
+        }
+      }
+
+      // Find nearest enemy in front/range for single-target actions
       const activeMobs = mobsRef.current.filter((m) => m.hp > 0);
       let target = targetEnemy;
 
@@ -534,18 +1154,6 @@ export default function App() {
         }
       }
 
-      if (action === 'potion') {
-        sound.playPotion();
-        const healedHp = Math.min(cur.maxHp, cur.hp + 50);
-        setStatusEffects({ poisonTurns: 0, burnTurns: 0 });
-        const updated = { ...cur, hp: healedHp };
-        setPlayer(updated);
-        saveState(updated);
-        spawnFloatingText('+50 HP', cur.x, cur.y, 'heal');
-        addLog('Quaffed Crimson Potion! Restored +50 HP and cured poison.', 'heal');
-        return;
-      }
-
       if (!target) {
         addLog('No monsters in range! Explore the biomes to find beasts.', 'info');
         return;
@@ -558,14 +1166,18 @@ export default function App() {
         addLog(`${target.name} is out of melee range! Move closer.`, 'info');
         return;
       }
+      if (action === 'thunder_smite' && dist > 6.5) {
+        addLog(`${target.name} is out of Thunder Smite range (6.5 tiles)! Move closer.`, 'info');
+        return;
+      }
 
       // Play Sound
       if (action === 'attack') sound.playSlash();
       else if (action === 'fireball') sound.playFireball();
-      else if (action === 'thunder') sound.playThunder();
+      else if (action === 'thunder' || action === 'thunder_smite') sound.playThunder();
 
-      // Spawn projectile visual for spells
-      if (action === 'fireball' || action === 'thunder') {
+      // Spawn projectile visual for spells & thunder smite
+      if (action === 'fireball' || action === 'thunder' || action === 'thunder_smite') {
         const projId = 'proj_' + Math.random().toString(36).substring(2, 9);
         setProjectiles((prev) => [
           ...prev,
@@ -577,12 +1189,12 @@ export default function App() {
             startY: cur.y ?? 19,
             targetX: target!.x,
             targetY: target!.y,
-            speed: 5,
-            damage: 25,
+            speed: action === 'thunder_smite' ? 8 : 5,
+            damage: action === 'thunder_smite' ? 45 : 25,
             type: action === 'fireball' ? 'fireball' : 'frost',
             ownerId: 'player',
-            radius: 7,
-            color: action === 'fireball' ? '#f97316' : '#38bdf8',
+            radius: action === 'thunder_smite' ? 8 : 7,
+            color: action === 'fireball' ? '#f97316' : action === 'thunder_smite' ? '#facc15' : '#38bdf8',
           },
         ]);
 
@@ -704,6 +1316,7 @@ export default function App() {
         let nextHp = result.playerHp;
         let nextMaxMana = cur.maxMana;
         let nextMana = result.playerMana;
+        let nextSkillPoints = cur.skillPoints ?? 0;
         const didLevelUp = nextXp >= nextLevel * 100;
 
         if (didLevelUp) {
@@ -712,8 +1325,9 @@ export default function App() {
           nextHp = nextMaxHp;
           nextMaxMana += 15;
           nextMana = nextMaxMana;
-          spawnFloatingText(`⭐ LEVEL UP! (Lv.${nextLevel})`, cur.x, cur.y, 'level');
-          addLog(`⭐ LEVEL UP! ${cur.name} advanced to Level ${nextLevel}! Attributes surged.`, 'heal');
+          nextSkillPoints += 1;
+          spawnFloatingText(`⭐ LEVEL UP! (Lv.${nextLevel}) +1 SP`, cur.x, cur.y, 'level');
+          addLog(`⭐ LEVEL UP! ${cur.name} advanced to Level ${nextLevel}! Attributes surged and +1 Skill Point earned!`, 'heal');
         }
 
         // Trigger reward preview
@@ -740,6 +1354,7 @@ export default function App() {
           xp: nextXp,
           level: nextLevel,
           wins: nextWins,
+          skillPoints: nextSkillPoints,
         };
 
         setPlayer(updatedHero);
@@ -775,7 +1390,7 @@ export default function App() {
         }, 200);
       }
     },
-    [targetEnemy, spawnFloatingText, addLog, saveState]
+    [targetEnemy, spawnFloatingText, addLog, saveState, updateQuestProgress]
   );
 
   // 7. Open World Mob AI, Wandering & Respawn Loop
@@ -978,6 +1593,20 @@ export default function App() {
         return;
       }
 
+      // Realm Travel Gateway
+      if (obj.type === 'portal' || obj.id.includes('portal') || obj.id.includes('gateway')) {
+        sound.playVictory();
+        setIsRealmTravelOpen(true);
+        return;
+      }
+
+      // PVP Duel Arena War Ring
+      if (obj.id.includes('pvp_ring')) {
+        sound.playSlash();
+        setIsPvpArenaOpen(true);
+        return;
+      }
+
       // Advance Quest Object Interaction Objectives
       updateQuestProgress((o) => {
         if (o.type === 'interact_object') {
@@ -1066,6 +1695,10 @@ export default function App() {
       else if (e.key === '2') handleCombatAction('fireball');
       else if (e.key === '3') handleCombatAction('thunder');
       else if (e.key === '4') handleCombatAction('potion');
+      else if (e.key === '5') handleCombatAction('whirlwind');
+      else if (e.key === '6') handleCombatAction('frost_nova');
+      else if (e.key === '7') handleCombatAction('thunder_smite');
+      else if (e.key === '8') handleCombatAction('iron_bastion');
 
       // Interacting with nearby object
       else if (e.key === 'e' || e.key === 'E' || e.key === ' ') {
@@ -1081,6 +1714,9 @@ export default function App() {
         window.dispatchEvent(new CustomEvent('valdor:toggle-minimap'));
       }
       else if (e.key === 'l' || e.key === 'L') setIsMultiplayerModalOpen(true);
+      else if (e.key === 'r' || e.key === 'R') setIsRealmTravelOpen((prev) => !prev);
+      else if (e.key === 'p' || e.key === 'P') setIsPvpArenaOpen((prev) => !prev);
+      else if (e.key === 'o' || e.key === 'O') setIsSaveDataOpen((prev) => !prev);
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -1250,6 +1886,9 @@ export default function App() {
             gamepadName={gamepadState.id}
             touchControlsEnabled={touchControlsEnabled}
             onToggleTouchControls={() => setTouchControlsEnabled((prev) => !prev)}
+            onOpenRealmTravel={() => setIsRealmTravelOpen(true)}
+            onOpenPvpArena={() => setIsPvpArenaOpen(true)}
+            onOpenSaveData={() => setIsSaveDataOpen(true)}
           />
 
           {/* Android Virtual Touch Controls */}
@@ -1287,8 +1926,11 @@ export default function App() {
       {/* Tech & Architecture Inspector Modal */}
       <TechInspectorModal
         isOpen={isTechModalOpen}
+        player={player}
         onClose={() => setIsTechModalOpen(false)}
         onReloadXml={loadBestiaryFromXml}
+        onUnlockOrUpgradeSkill={handleUnlockOrUpgradeSkill}
+        onRespecSkills={handleRespecSkills}
       />
 
       {/* Inventory Knapsack & Equipment Modal */}
@@ -1343,6 +1985,34 @@ export default function App() {
           });
         }}
         onClaimReward={handleClaimQuestReward}
+      />
+
+      {/* 12 Realms Multiverse Travel Modal */}
+      <RealmTravelModal
+        isOpen={isRealmTravelOpen}
+        currentRealmId={currentRealmId}
+        player={player}
+        onClose={() => setIsRealmTravelOpen(false)}
+        onTravelToRealm={handleTravelToRealm}
+      />
+
+      {/* PVP Arena & Gladiator Colosseum Modal */}
+      <PvpArenaModal
+        isOpen={isPvpArenaOpen}
+        player={player}
+        onClose={() => setIsPvpArenaOpen(false)}
+        onTogglePvp={handleTogglePvp}
+        onStartDuel={handleStartGladiatorDuel}
+      />
+
+      {/* Save Data Export & Import Modal */}
+      <SaveDataModal
+        isOpen={isSaveDataOpen}
+        player={player}
+        inventory={loadSavedInventory()}
+        worldObjects={objects}
+        onClose={() => setIsSaveDataOpen(false)}
+        onImportSave={handleImportSave}
       />
     </div>
   );

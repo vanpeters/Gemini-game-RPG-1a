@@ -223,6 +223,82 @@ export const OpenWorldCanvas: React.FC<OpenWorldCanvasProps> = ({
               ctx.fillRect(drawX + 10, drawY + 36, 28, 6);
               break;
 
+            case 'snow':
+              ctx.fillStyle = '#f1f5f9';
+              ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.fillStyle = '#e2e8f0';
+              ctx.fillRect(drawX + 8, drawY + 8, 4, 4);
+              ctx.fillRect(drawX + 28, drawY + 24, 5, 4);
+              break;
+
+            case 'ice':
+              ctx.fillStyle = '#7dd3fc';
+              ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.fillStyle = '#bae6fd';
+              ctx.fillRect(drawX + 4, drawY + 12, TILE_SIZE - 8, 2);
+              ctx.fillRect(drawX + 16, drawY + 30, TILE_SIZE - 20, 2);
+              break;
+
+            case 'sand':
+              ctx.fillStyle = '#d97706';
+              ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.fillStyle = '#b45309';
+              ctx.fillRect(drawX + 6, drawY + 14, 18, 2);
+              ctx.fillRect(drawX + 22, drawY + 32, 20, 2);
+              break;
+
+            case 'sandstone':
+              ctx.fillStyle = '#b45309';
+              ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.strokeStyle = '#78350f';
+              ctx.strokeRect(drawX + 2, drawY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+              break;
+
+            case 'obsidian':
+              ctx.fillStyle = '#1c1917';
+              ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.fillStyle = '#450a0a';
+              ctx.fillRect(drawX + 10, drawY + 10, 8, 8);
+              break;
+
+            case 'void_stone':
+              ctx.fillStyle = '#1e1b4b';
+              ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.fillStyle = '#818cf8';
+              ctx.fillRect(drawX + 12, drawY + 16, 2, 2);
+              ctx.fillRect(drawX + 32, drawY + 28, 3, 3);
+              break;
+
+            case 'crystal':
+              ctx.fillStyle = '#0f172a';
+              ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.fillStyle = '#c084fc';
+              ctx.beginPath();
+              ctx.moveTo(drawX + 24, drawY + 4);
+              ctx.lineTo(drawX + 38, drawY + 44);
+              ctx.lineTo(drawX + 10, drawY + 44);
+              ctx.closePath();
+              ctx.fill();
+              break;
+
+            case 'dungeon_floor':
+              ctx.fillStyle = '#334155';
+              ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.strokeStyle = '#1e293b';
+              ctx.strokeRect(drawX + 1, drawY + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+              break;
+
+            case 'dungeon_wall':
+              ctx.fillStyle = '#0f172a';
+              ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.strokeStyle = '#334155';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+              ctx.fillStyle = '#475569';
+              ctx.fillRect(drawX + 6, drawY + 8, TILE_SIZE - 12, 6);
+              ctx.fillRect(drawX + 6, drawY + 24, TILE_SIZE - 12, 6);
+              break;
+
             default:
               ctx.fillStyle = '#164e22';
               ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
@@ -424,10 +500,11 @@ export const OpenWorldCanvas: React.FC<OpenWorldCanvasProps> = ({
 
         // Peer Name & LAN badge
         ctx.font = 'bold 10px monospace';
-        ctx.fillStyle = '#67e8f9';
+        ctx.fillStyle = peer.pvpEnabled ? '#f87171' : '#67e8f9';
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 2;
-        const peerTitle = `${peer.isHost ? '⭐ ' : ''}${peer.name} (Lv.${peer.level})`;
+        const pvpTag = peer.pvpEnabled ? ' ⚔️[PVP]' : '';
+        const peerTitle = `${peer.isHost ? '⭐ ' : ''}${peer.name} (Lv.${peer.level})${pvpTag}`;
         ctx.strokeText(peerTitle, drawX + TILE_SIZE / 2, drawY - 6);
         ctx.fillText(peerTitle, drawX + TILE_SIZE / 2, drawY - 6);
 
@@ -438,7 +515,7 @@ export const OpenWorldCanvas: React.FC<OpenWorldCanvasProps> = ({
         const hpPercent = Math.max(0, peer.hp / peer.maxHp);
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(barX, barY, barWidth, 4);
-        ctx.fillStyle = '#38bdf8';
+        ctx.fillStyle = peer.pvpEnabled ? '#ef4444' : '#38bdf8';
         ctx.fillRect(barX, barY, Math.round(barWidth * hpPercent), 4);
       }
 
@@ -448,8 +525,8 @@ export const OpenWorldCanvas: React.FC<OpenWorldCanvasProps> = ({
       const walkBob = player.isMoving ? Math.abs(Math.sin(time * 6)) * 4 : 0;
 
       // Selection / Target ring under player
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = player.pvpEnabled ? '#ef4444' : '#f59e0b';
+      ctx.lineWidth = player.pvpEnabled ? 2.5 : 1.5;
       ctx.beginPath();
       ctx.ellipse(playerDrawX + TILE_SIZE / 2, playerDrawY + TILE_SIZE - 4, 16, 8, 0, 0, Math.PI * 2);
       ctx.stroke();
@@ -462,11 +539,12 @@ export const OpenWorldCanvas: React.FC<OpenWorldCanvasProps> = ({
 
       // Player Name Overhead
       ctx.font = 'bold 11px monospace';
-      ctx.fillStyle = '#fef08a';
+      ctx.fillStyle = player.pvpEnabled ? '#f87171' : '#fef08a';
       ctx.strokeStyle = '#000';
       ctx.lineWidth = 2.5;
-      ctx.strokeText(`${player.name} (You)`, playerDrawX + TILE_SIZE / 2, playerDrawY - 8);
-      ctx.fillText(`${player.name} (You)`, playerDrawX + TILE_SIZE / 2, playerDrawY - 8);
+      const myPvpText = player.pvpEnabled ? ' ⚔️[PVP ON]' : '';
+      ctx.strokeText(`${player.name} (You)${myPvpText}`, playerDrawX + TILE_SIZE / 2, playerDrawY - 8);
+      ctx.fillText(`${player.name} (You)${myPvpText}`, playerDrawX + TILE_SIZE / 2, playerDrawY - 8);
 
       // Player Mini HP Bar
       const playerBarWidth = 36;

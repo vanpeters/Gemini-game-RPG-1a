@@ -31,7 +31,29 @@ export interface Player {
   equipped?: EquippedGear;
   baseMaxHp?: number;
   baseMaxMana?: number;
+  skillPoints?: number;
+  unlockedSkills?: Record<string, number>; // skillId -> level (e.g. { whirlwind: 1, frost_nova: 2 })
+  // 12 Realms & Multiverse State
+  currentRealmId?: number; // 1 to 12
+  discoveredRealms?: number[]; // list of discovered realm IDs (e.g. [1, 2, ...])
+  realmExploredTiles?: Record<number, string[]>; // realmId -> explored tile keys
+  // PVP Combat & Honor System
+  pvpEnabled?: boolean;
+  pvpKills?: number;
+  pvpDeaths?: number;
+  pvpHonor?: number;
+  pvpRank?: string; // 'Recruit' | 'Gladiator' | 'Centurion' | 'Champion' | 'Warlord' | 'Grand Marshal'
 }
+
+export type CombatAction =
+  | 'attack'
+  | 'fireball'
+  | 'thunder'
+  | 'potion'
+  | 'whirlwind'
+  | 'frost_nova'
+  | 'thunder_smite'
+  | 'iron_bastion';
 
 export type EquipmentSlot = 'weapon' | 'shield' | 'armor' | 'relic';
 
@@ -301,6 +323,8 @@ export interface NetworkPeer {
   level: number;
   isHost: boolean;
   lastSeen: number;
+  realmId?: number;
+  pvpEnabled?: boolean;
   lastAttackAction?: {
     type: 'attack' | 'fireball' | 'thunder' | 'heal';
     time: number;
@@ -326,7 +350,11 @@ export interface MultiplayerMessage {
     | 'MOB_STATE_SYNC'
     | 'CHAT'
     | 'CHEST_OPENED'
-    | 'REVIVE';
+    | 'REVIVE'
+    | 'PVP_ATTACK'
+    | 'PVP_HIT'
+    | 'PVP_KILL'
+    | 'PVP_TOGGLE';
   senderId: string;
   senderName: string;
   payload: any;
